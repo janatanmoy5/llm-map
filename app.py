@@ -1,4 +1,3 @@
-
 # app.py
  
 import os
@@ -1305,7 +1304,3 @@ with result_col:
         )
  
     st.markdown("</div>", unsafe_allow_html=True)
- 
-
-Failed to download files
-
