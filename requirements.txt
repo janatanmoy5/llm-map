@@ -3,7 +3,7 @@ streamlit-folium
 folium
 pandas
 earthengine-api
-transformers
 torch
+transformers
 sentencepiece
 protobuf
