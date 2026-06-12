@@ -1,7 +1,7 @@
 # app.py
 
 import os
-import json
+import re
 import math
 import warnings
 import numpy as np
@@ -47,7 +47,6 @@ RISK_STYLE = {
     "Very High": {"color": "#7F0000", "emoji": "🟥", "intensity": 0.90},
 }
 
-# Microsoft Planetary Computer STAC endpoint
 PC_STAC_API = "https://planetarycomputer.microsoft.com/api/stac/v1"
 
 
@@ -55,46 +54,64 @@ PC_STAC_API = "https://planetarycomputer.microsoft.com/api/stac/v1"
 # CSS
 # ============================================================
 
-st.markdown(
-    """
-    <style>
-    .block-container { padding-top:1.2rem; padding-left:1.2rem; padding-right:1.2rem; }
-    .app-title  { font-size:34px; font-weight:850; color:#0F172A; margin-bottom:0; }
-    .app-subtitle { color:#64748B; font-size:15px; margin-bottom:16px; }
-    .panel {
-        background:#FFFFFF; border:1px solid #E5E7EB; border-radius:18px;
-        padding:16px; box-shadow:0px 5px 18px rgba(15,23,42,0.06); margin-bottom:14px;
-    }
-    .panel-title { font-size:18px; font-weight:800; color:#0F172A; margin-bottom:10px; }
-    .hint-box {
-        background:#EFF6FF; border:1px solid #BFDBFE; color:#1E3A8A;
-        border-radius:14px; padding:12px; font-size:14px; margin-bottom:12px;
-    }
-    .risk-card {
-        padding:22px; border-radius:18px; color:white;
-        box-shadow:0px 8px 22px rgba(0,0,0,0.18); margin-bottom:14px;
-    }
-    .risk-big  { font-size:31px; font-weight:850; line-height:1.1; }
-    .risk-small { font-size:14px; margin-top:6px; }
-    .legend-row { display:flex; align-items:center; margin-bottom:7px; font-size:14px; color:#334155; }
-    .legend-dot { height:13px; width:13px; border-radius:50%; display:inline-block; margin-right:8px; }
-    .chat-user  { background:#E0F2FE; border-radius:14px; padding:10px 12px; margin-bottom:8px;  color:#075985; font-size:14px; }
-    .chat-agent { background:#F1F5F9; border-radius:14px; padding:10px 12px; margin-bottom:14px; color:#334155; font-size:14px; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+st.markdown("""
+<style>
+.block-container { padding-top:1.2rem; padding-left:1.2rem; padding-right:1.2rem; }
+.app-title  { font-size:34px; font-weight:850; color:#0F172A; margin-bottom:0; }
+.app-subtitle { color:#64748B; font-size:15px; margin-bottom:16px; }
+.panel {
+    background:#FFFFFF; border:1px solid #E5E7EB; border-radius:18px;
+    padding:16px; box-shadow:0px 5px 18px rgba(15,23,42,0.06); margin-bottom:14px;
+}
+.panel-title { font-size:18px; font-weight:800; color:#0F172A; margin-bottom:10px; }
+.hint-box {
+    background:#EFF6FF; border:1px solid #BFDBFE; color:#1E3A8A;
+    border-radius:14px; padding:12px; font-size:14px; margin-bottom:12px;
+}
+.risk-card {
+    padding:22px; border-radius:18px; color:white;
+    box-shadow:0px 8px 22px rgba(0,0,0,0.18); margin-bottom:14px;
+}
+.risk-big  { font-size:31px; font-weight:850; line-height:1.1; }
+.risk-small { font-size:14px; margin-top:6px; }
+.legend-row { display:flex; align-items:center; margin-bottom:7px; font-size:14px; color:#334155; }
+.legend-dot { height:13px; width:13px; border-radius:50%; display:inline-block; margin-right:8px; }
+.chat-bubble-user {
+    background: linear-gradient(135deg,#DBEAFE,#EFF6FF);
+    border:1px solid #BFDBFE; border-radius:16px 16px 4px 16px;
+    padding:10px 14px; margin-bottom:6px; color:#1E3A8A; font-size:14px;
+    max-width:92%; margin-left:auto;
+}
+.chat-bubble-agent {
+    background: linear-gradient(135deg,#F1F5F9,#F8FAFC);
+    border:1px solid #E2E8F0; border-radius:16px 16px 16px 4px;
+    padding:10px 14px; margin-bottom:12px; color:#334155; font-size:14px;
+    max-width:92%;
+}
+.chat-label { font-size:11px; font-weight:700; margin-bottom:3px; }
+.chat-user-label  { color:#3B82F6; }
+.chat-agent-label { color:#64748B; }
+.city-tag {
+    display:inline-block; background:#DBEAFE; color:#1D4ED8;
+    border-radius:8px; padding:2px 8px; font-size:12px; font-weight:600;
+    margin-right:4px;
+}
+.param-good     { color:#16A34A; font-weight:700; }
+.param-moderate { color:#D97706; font-weight:700; }
+.param-concern  { color:#DC2626; font-weight:700; }
+</style>
+""", unsafe_allow_html=True)
 
 
 # ============================================================
 # HEADER
 # ============================================================
 
-st.markdown('<div class="app-title">Water Quality AI Map</div>', unsafe_allow_html=True)
+st.markdown('<div class="app-title">💧 Water Quality AI Map</div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="app-subtitle">'
-    "Left: water inputs | Center: map circle selection | Right: chat agent | "
-    "Bottom: prediction, ML, Planetary Computer context, and nearest city"
+    "Left: water inputs &nbsp;|&nbsp; Center: interactive map &nbsp;|&nbsp; "
+    "Right: smart chat agent — ask about cities, water quality, risk levels, comparisons"
     "</div>",
     unsafe_allow_html=True,
 )
@@ -113,30 +130,53 @@ final_df = pd.read_csv(DATA_FILE)
 if "Unnamed: 0" in final_df.columns:
     final_df = final_df.drop(columns=["Unnamed: 0"])
 
-required_cols = [
-    "city", "pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD",
-    "Risk_Level", "latitude", "longitude",
-]
-
+required_cols = ["city", "pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD", "Risk_Level", "latitude", "longitude"]
 for col in required_cols:
     if col not in final_df.columns:
         st.error(f"Missing required column in CSV: {col}")
         st.stop()
 
 numeric_cols = [
-    "temperature_2m", "temperature_2m_C",
-    "dewpoint_temperature_2m", "dewpoint_temperature_2m_C",
+    "temperature_2m", "temperature_2m_C", "dewpoint_temperature_2m", "dewpoint_temperature_2m_C",
     "total_precipitation_sum", "surface_pressure",
     "pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD",
-    "Water_Quality_Risk_Score", "Risk_Score",
-    "Color_Intensity", "latitude", "longitude",
+    "Water_Quality_Risk_Score", "Risk_Score", "Color_Intensity", "latitude", "longitude",
 ]
-
 for col in numeric_cols:
     if col in final_df.columns:
         final_df[col] = pd.to_numeric(final_df[col], errors="coerce")
 
 final_df = final_df.dropna(subset=["latitude", "longitude"])
+
+# Build lowercase city lookup for fast fuzzy matching
+city_lookup = {row["city"].lower().strip(): idx for idx, row in final_df.iterrows()}
+all_city_names = [row["city"] for _, row in final_df.iterrows()]
+
+
+# ============================================================
+# CITY FUZZY MATCH
+# ============================================================
+
+def find_city_in_text(text: str):
+    """
+    Return (city_name, df_row) if any city from the dataset is mentioned
+    in the user's message (case-insensitive, partial match allowed).
+    Returns (None, None) if no city found.
+    """
+    text_lower = text.lower()
+    best_city = None
+    best_row  = None
+    best_len  = 0
+
+    for city_lower, idx in city_lookup.items():
+        # Match whole word / city name inside the text
+        if re.search(r'\b' + re.escape(city_lower) + r'\b', text_lower):
+            if len(city_lower) > best_len:
+                best_len  = len(city_lower)
+                best_city = final_df.loc[idx, "city"]
+                best_row  = final_df.loc[idx]
+
+    return best_city, best_row
 
 
 # ============================================================
@@ -147,216 +187,132 @@ def dataframe_to_llm_context(df: pd.DataFrame) -> str:
     rows = []
     for _, row in df.iterrows():
         rows.append(f"""
-City: {row.get('city', 'Unknown')}
-
-Planetary Computer / Climate Data:
-- Temperature: {row.get('temperature_2m_C', 'NA')} °C
-- Dewpoint Temperature: {row.get('dewpoint_temperature_2m_C', 'NA')} °C
-- Total Precipitation: {row.get('total_precipitation_sum', 'NA')}
-- Surface Pressure: {row.get('surface_pressure', 'NA')}
-
-Water Quality Parameters:
-- pH: {row.get('pH', 'NA')}
-- TDS: {row.get('TDS', 'NA')} mg/L
-- Total Hardness: {row.get('TH', 'NA')} mg/L
-- Calcium: {row.get('Ca', 'NA')} mg/L
-- Magnesium: {row.get('Mg', 'NA')} mg/L
-- Dissolved Oxygen: {row.get('DO', 'NA')} mg/L
-- BOD: {row.get('BOD', 'NA')} mg/L
-
-Prediction:
-- Water Quality: {row.get('Water_Quality_Prediction', 'NA')}
-- Risk Level: {row.get('Risk_Level', 'NA')}
-- Risk Score: {row.get('Risk_Score', row.get('Water_Quality_Risk_Score', 'NA'))}
-- Concern Parameters: {row.get('Concern_Parameters', 'NA')}
+City: {row.get('city','Unknown')}
+- pH:{row.get('pH','NA')}  TDS:{row.get('TDS','NA')} mg/L  TH:{row.get('TH','NA')} mg/L
+- Ca:{row.get('Ca','NA')} mg/L  Mg:{row.get('Mg','NA')} mg/L
+- DO:{row.get('DO','NA')} mg/L  BOD:{row.get('BOD','NA')} mg/L
+- Risk Level:{row.get('Risk_Level','NA')}  Risk Score:{row.get('Risk_Score',row.get('Water_Quality_Risk_Score','NA'))}
+- Concern Parameters:{row.get('Concern_Parameters','NA')}
+- Temp:{row.get('temperature_2m_C','NA')}°C  Precip:{row.get('total_precipitation_sum','NA')}
 """)
     return "\n".join(rows)
-
 
 llm_context = dataframe_to_llm_context(final_df)
 
 
 # ============================================================
-# PLANETARY COMPUTER  –  pystac_client + planetary_computer
+# PLANETARY COMPUTER
 # ============================================================
 
 @st.cache_resource
 def get_pc_catalog():
-    """
-    Open the Microsoft Planetary Computer STAC catalog.
-    planetary_computer.sign_inplace() is called on each item
-    so that asset HREFs are automatically signed (no API key needed).
-    """
     if not STAC_READY:
         return None, "pystac_client / planetary_computer not installed."
     try:
         catalog = pystac_client.Client.open(
-            PC_STAC_API,
-            modifier=planetary_computer.sign_inplace,
+            PC_STAC_API, modifier=planetary_computer.sign_inplace,
         )
         return catalog, "Planetary Computer STAC catalog connected."
     except Exception as exc:
         return None, str(exc)
 
-
 pc_catalog, pc_message = get_pc_catalog()
 
 
-def _bbox_from_point(lat: float, lon: float, radius_m: float) -> list:
-    """Return [west, south, east, north] bounding box for a circle."""
+def _bbox_from_point(lat, lon, radius_m):
     deg_lat = radius_m / 111_320
     deg_lon = radius_m / (111_320 * math.cos(math.radians(lat)))
     return [lon - deg_lon, lat - deg_lat, lon + deg_lon, lat + deg_lat]
 
 
-def extract_pc_data(latitude: float, longitude: float, radius_m: float) -> dict:
-    """
-    Query Planetary Computer for:
-      - Copernicus DEM (elevation)   via 'cop-dem-glo-30'
-      - ERA5 daily aggregates        via 'era5-pds'  (temperature, precip, pressure)
-
-    Returns a flat dict compatible with the rest of the app.
-    """
+def extract_pc_data(latitude, longitude, radius_m):
     empty = {
-        "altitude_m": "NA",
-        "temperature_2m_C": "NA",
-        "dewpoint_temperature_2m_C": "NA",
-        "total_precipitation_sum": "NA",
-        "surface_pressure": "NA",
-        "source": "Planetary Computer",
-        "ndvi_mean": "NA",
-        "stac_items_found": 0,
+        "altitude_m": "NA", "temperature_2m_C": "NA",
+        "dewpoint_temperature_2m_C": "NA", "total_precipitation_sum": "NA",
+        "surface_pressure": "NA", "ndvi_mean": "NA",
+        "stac_items_found": 0, "source": "Planetary Computer",
     }
-
     if pc_catalog is None or not STAC_READY:
         empty["source"] = "Planetary Computer not available"
         return empty
 
-    bbox = _bbox_from_point(latitude, longitude, max(radius_m, 5_000))
+    bbox   = _bbox_from_point(latitude, longitude, max(radius_m, 5_000))
     result = dict(empty)
-    result["stac_items_found"] = 0
 
-    # ── 1. Copernicus DEM 30 m ──────────────────────────────────────────────
+    # DEM
     try:
-        dem_search = pc_catalog.search(
-            collections=["cop-dem-glo-30"],
-            bbox=bbox,
-            max_items=4,
-        )
-        dem_items = list(dem_search.items())
-        result["stac_items_found"] += len(dem_items)
-
-        if dem_items:
-            import stackstac as sc  # lazy import
-            stack = sc.stack(
-                dem_items,
-                epsg=4326,
-                resolution=0.0003,   # ~30 m in degrees
-                bounds=bbox,
-                dtype="float32",
-                fill_value=np.nan,
-            )
-            # stack dims: (time, band, y, x)
-            elevation_arr = stack.values
-            valid = elevation_arr[~np.isnan(elevation_arr)]
+        items = list(pc_catalog.search(collections=["cop-dem-glo-30"], bbox=bbox, max_items=4).items())
+        result["stac_items_found"] += len(items)
+        if items:
+            import stackstac as sc
+            stack = sc.stack(items, epsg=4326, resolution=0.0003, bounds=bbox, dtype="float32", fill_value=np.nan)
+            valid = stack.values[~np.isnan(stack.values)]
             if valid.size > 0:
                 result["altitude_m"] = round(float(np.nanmean(valid)), 2)
     except Exception as exc:
         result["altitude_m"] = f"DEM error: {exc}"
 
-    # ── 2. ERA5 PDS (temperature, precipitation, pressure) ─────────────────
+    # ERA5
     try:
-        era5_search = pc_catalog.search(
-            collections=["era5-pds"],
-            bbox=bbox,
-            datetime="2023-01-01/2023-01-31",
-            max_items=10,
-        )
-        era5_items = list(era5_search.items())
+        era5_items = list(pc_catalog.search(
+            collections=["era5-pds"], bbox=bbox,
+            datetime="2023-01-01/2023-01-31", max_items=10,
+        ).items())
         result["stac_items_found"] += len(era5_items)
-
         temps, dewps, precips, pressures = [], [], [], []
 
         for item in era5_items:
-            assets = item.assets
-
-            def _read_asset(key: str) -> float | None:
-                if key not in assets:
-                    return None
+            def _read(key):
+                if key not in item.assets: return None
                 try:
-                    href = assets[key].href
-                    with rasterio.open(href) as src:
-                        win = rasterio.windows.from_bounds(
-                            *bbox, transform=src.transform
-                        )
+                    with rasterio.open(item.assets[key].href) as src:
+                        win  = rasterio.windows.from_bounds(*bbox, transform=src.transform)
                         data = src.read(1, window=win, resampling=Resampling.bilinear)
-                        valid_data = data[data != src.nodata] if src.nodata else data.flatten()
-                        return float(np.nanmean(valid_data)) if valid_data.size else None
+                        vd   = data[data != src.nodata] if src.nodata else data.flatten()
+                        return float(np.nanmean(vd)) if vd.size else None
                 except Exception:
                     return None
 
-            t2m = _read_asset("2m_temperature")
-            d2m = _read_asset("2m_dewpoint_temperature")
-            tp  = _read_asset("total_precipitation")
-            sp  = _read_asset("surface_pressure")
+            t = _read("2m_temperature");      t and temps.append(t)
+            d = _read("2m_dewpoint_temperature"); d and dewps.append(d)
+            p = _read("total_precipitation"); p and precips.append(p)
+            s = _read("surface_pressure");    s and pressures.append(s)
 
-            if t2m is not None:
-                temps.append(t2m)
-            if d2m is not None:
-                dewps.append(d2m)
-            if tp is not None:
-                precips.append(tp)
-            if sp is not None:
-                pressures.append(sp)
-
-        def _kelvin_to_c(vals):
-            if not vals:
-                return "NA"
+        def _k2c(vals):
+            if not vals: return "NA"
             m = float(np.mean(vals))
             return round(m - 273.15, 2) if m > 100 else round(m, 2)
 
-        result["temperature_2m_C"]        = _kelvin_to_c(temps)
-        result["dewpoint_temperature_2m_C"] = _kelvin_to_c(dewps)
-        result["total_precipitation_sum"]  = round(float(np.mean(precips)), 6) if precips else "NA"
-        result["surface_pressure"]         = round(float(np.mean(pressures)), 2) if pressures else "NA"
+        result["temperature_2m_C"]          = _k2c(temps)
+        result["dewpoint_temperature_2m_C"] = _k2c(dewps)
+        result["total_precipitation_sum"]   = round(float(np.mean(precips)), 6) if precips else "NA"
+        result["surface_pressure"]          = round(float(np.mean(pressures)), 2) if pressures else "NA"
         result["source"] = "Copernicus DEM 30 + ERA5-PDS via Planetary Computer STAC"
-
     except Exception as exc:
         result["source"] = f"ERA5 query error: {exc}"
 
-    # ── 3. Sentinel-2 NDVI (optional bonus) ────────────────────────────────
+    # Sentinel-2 NDVI
     try:
-        s2_search = pc_catalog.search(
-            collections=["sentinel-2-l2a"],
-            bbox=bbox,
+        s2_items = list(pc_catalog.search(
+            collections=["sentinel-2-l2a"], bbox=bbox,
             datetime="2023-01-01/2023-03-31",
-            query={"eo:cloud_cover": {"lt": 20}},
-            max_items=3,
-        )
-        s2_items = list(s2_search.items())
+            query={"eo:cloud_cover": {"lt": 20}}, max_items=3,
+        ).items())
         result["stac_items_found"] += len(s2_items)
-
         if s2_items:
             import stackstac as sc
-            s2_stack = sc.stack(
-                s2_items,
-                assets=["B04", "B08"],   # Red, NIR
-                epsg=4326,
-                resolution=0.0001,
-                bounds=bbox,
-                dtype="float32",
-                fill_value=np.nan,
-            )
-            red = s2_stack.sel(band="B04").values.astype(float)
-            nir = s2_stack.sel(band="B08").values.astype(float)
+            s2 = sc.stack(s2_items, assets=["B04","B08"], epsg=4326, resolution=0.0001,
+                          bounds=bbox, dtype="float32", fill_value=np.nan)
+            red  = s2.sel(band="B04").values.astype(float)
+            nir  = s2.sel(band="B08").values.astype(float)
             denom = nir + red
             denom[denom == 0] = np.nan
             ndvi = (nir - red) / denom
-            valid_ndvi = ndvi[~np.isnan(ndvi)]
-            if valid_ndvi.size > 0:
-                result["ndvi_mean"] = round(float(np.nanmean(valid_ndvi)), 4)
+            valid = ndvi[~np.isnan(ndvi)]
+            if valid.size > 0:
+                result["ndvi_mean"] = round(float(np.nanmean(valid)), 4)
     except Exception:
-        pass  # NDVI is bonus; silently skip if unavailable
+        pass
 
     return result
 
@@ -365,115 +321,70 @@ def extract_pc_data(latitude: float, longitude: float, radius_m: float) -> dict:
 # UTILITIES
 # ============================================================
 
-def circle_area_km2(radius_m: float) -> float:
-    return math.pi * (radius_m / 1000) ** 2
-
+def circle_area_km2(r): return math.pi * (r / 1000) ** 2
 
 def get_circle_from_geometry(drawing):
-    if not drawing:
-        return None, None, None
+    if not drawing: return None, None, None
     geom  = drawing.get("geometry", {})
     props = drawing.get("properties", {})
-    geom_type = geom.get("type")
-    coords    = geom.get("coordinates", [])
-    radius_m  = props.get("radius")
-    if geom_type == "Point" and len(coords) == 2:
-        lon, lat = coords
-        if radius_m is None:
-            radius_m = 1000.0
-        return float(lat), float(lon), float(radius_m)
+    if geom.get("type") == "Point" and len(geom.get("coordinates", [])) == 2:
+        lon, lat = geom["coordinates"]
+        return float(lat), float(lon), float(props.get("radius", 1000.0))
     return None, None, None
 
-
-def calculate_rule_risk(row: dict):
+def calculate_rule_risk(row):
     score, reasons = 0, []
-    pH  = float(row["pH"])
-    TDS = float(row["TDS"])
-    TH  = float(row["TH"])
-    DO  = float(row["DO"])
-    BOD = float(row["BOD"])
-
-    if pH < 6.5 or pH > 8.5:
-        score += 2; reasons.append("pH outside recommended range")
-    if TDS > 500:
-        score += 1; reasons.append("high TDS")
-    if TDS > 1000:
-        score += 2; reasons.append("very high TDS")
-    if TH > 300:
-        score += 1; reasons.append("high total hardness")
-    if DO < 5:
-        score += 2; reasons.append("low dissolved oxygen")
-    if BOD > 3:
-        score += 1; reasons.append("high BOD")
-    if BOD > 6:
-        score += 2; reasons.append("very high BOD")
-
-    if score <= 1:   level = "Very Low"
-    elif score <= 3: level = "Low"
-    elif score <= 5: level = "Moderate"
-    elif score <= 7: level = "High"
-    else:            level = "Very High"
-
-    if not reasons:
-        reasons.append("all major parameters are within low-risk range")
-
+    pH = float(row["pH"]); TDS = float(row["TDS"]); TH = float(row["TH"])
+    DO = float(row["DO"]); BOD = float(row["BOD"])
+    if pH < 6.5 or pH > 8.5:  score += 2; reasons.append("pH outside range")
+    if TDS > 500:              score += 1; reasons.append("high TDS")
+    if TDS > 1000:             score += 2; reasons.append("very high TDS")
+    if TH > 300:               score += 1; reasons.append("high hardness")
+    if DO < 5:                 score += 2; reasons.append("low dissolved oxygen")
+    if BOD > 3:                score += 1; reasons.append("high BOD")
+    if BOD > 6:                score += 2; reasons.append("very high BOD")
+    level = (
+        "Very Low" if score <= 1 else "Low" if score <= 3 else
+        "Moderate" if score <= 5 else "High" if score <= 7 else "Very High"
+    )
+    if not reasons: reasons.append("all parameters within low-risk range")
     return level, score, "; ".join(reasons)
 
-
-def parameter_status(param: str, value):
-    value = float(value)
+def parameter_status(param, value):
+    v = float(value)
     if param == "pH":
-        return ("Good", "Within recommended range") if 6.5 <= value <= 8.5 else ("Concern", "pH outside 6.5–8.5")
+        return ("Good","Within 6.5–8.5") if 6.5 <= v <= 8.5 else ("Concern","Outside 6.5–8.5")
     if param == "TDS":
-        if value <= 500:  return "Good",     "Low dissolved solids"
-        if value <= 1000: return "Moderate", "Elevated dissolved solids"
-        return "High", "Very high dissolved solids"
+        return ("Good","Low solids") if v<=500 else ("Moderate","Elevated") if v<=1000 else ("High","Very high")
     if param == "TH":
-        return ("Good", "Acceptable hardness") if value <= 300 else ("Concern", "Hard water")
+        return ("Good","Acceptable") if v <= 300 else ("Concern","Hard water")
     if param == "DO":
-        if value >= 6: return "Good",     "Healthy dissolved oxygen"
-        if value >= 5: return "Moderate", "Borderline dissolved oxygen"
-        return "Concern", "Low dissolved oxygen"
+        return ("Good","Healthy O₂") if v>=6 else ("Moderate","Borderline") if v>=5 else ("Concern","Low O₂")
     if param == "BOD":
-        if value <= 3: return "Good",     "Low organic load"
-        if value <= 6: return "Moderate", "Possible organic pollution"
-        return "High", "High organic pollution"
-    if param in ["Ca", "Mg"]:
-        return "Info", "Mineral component"
-    return "Info", "Recorded"
+        return ("Good","Low load") if v<=3 else ("Moderate","Some pollution") if v<=6 else ("High","High pollution")
+    return ("Info","Mineral")
 
+def haversine_km(lat1,lon1,lat2,lon2):
+    R=6371.0; lat1,lon1,lat2,lon2 = map(math.radians,[float(lat1),float(lon1),float(lat2),float(lon2)])
+    dlat,dlon=lat2-lat1,lon2-lon1
+    a=math.sin(dlat/2)**2+math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
+    return R*2*math.atan2(math.sqrt(a),math.sqrt(1-a))
 
-def haversine_km(lat1, lon1, lat2, lon2) -> float:
-    R = 6371.0
-    lat1, lon1 = math.radians(float(lat1)), math.radians(float(lon1))
-    lat2, lon2 = math.radians(float(lat2)), math.radians(float(lon2))
-    dlat, dlon = lat2 - lat1, lon2 - lon1
-    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-
-def find_nearest_dataframe_record(latitude: float, longitude: float):
+def find_nearest_dataframe_record(latitude, longitude):
     df = final_df.copy()
-    df["distance_km"] = df.apply(
-        lambda r: haversine_km(latitude, longitude, r["latitude"], r["longitude"]), axis=1
-    )
+    df["distance_km"] = df.apply(lambda r: haversine_km(latitude,longitude,r["latitude"],r["longitude"]),axis=1)
     return df.sort_values("distance_km").iloc[0]
 
-
-def add_map_legend(folium_map):
-    legend_html = """
-    <div style="position:fixed;bottom:35px;left:35px;width:185px;z-index:9999;
-                background:white;border:2px solid #999;border-radius:10px;
-                padding:12px;font-size:14px;box-shadow:2px 2px 8px rgba(0,0,0,0.25);">
-    <b>Risk Legend</b><br>
+def add_map_legend(m):
+    html = """<div style="position:fixed;bottom:35px;left:35px;width:185px;z-index:9999;
+    background:white;border:2px solid #999;border-radius:10px;padding:12px;font-size:14px;
+    box-shadow:2px 2px 8px rgba(0,0,0,0.25);"><b>Risk Legend</b><br>
     <span style="color:#2E7D32;">●</span> Very Low<br>
     <span style="color:#66BB6A;">●</span> Low<br>
     <span style="color:#FB8C00;">●</span> Moderate<br>
     <span style="color:#E53935;">●</span> High<br>
-    <span style="color:#7F0000;">●</span> Very High
-    </div>
-    """
-    folium_map.get_root().html.add_child(folium.Element(legend_html))
+    <span style="color:#7F0000;">●</span> Very High</div>"""
+    m.get_root().html.add_child(folium.Element(html))
 
 
 # ============================================================
@@ -481,300 +392,329 @@ def add_map_legend(folium_map):
 # ============================================================
 
 ML_FEATURES = [
-    "latitude", "longitude",
-    "pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD",
-    "temperature_2m_C", "dewpoint_temperature_2m_C",
-    "total_precipitation_sum", "surface_pressure",
+    "latitude","longitude","pH","TDS","TH","Ca","Mg","DO","BOD",
+    "temperature_2m_C","dewpoint_temperature_2m_C","total_precipitation_sum","surface_pressure",
 ]
 
-
 @st.cache_resource
-def train_ml_model(df: pd.DataFrame):
-    train_df = df.copy()
+def train_ml_model(df):
+    t = df.copy()
     for col in ML_FEATURES:
-        if col not in train_df.columns:
-            train_df[col] = 0
-        train_df[col] = pd.to_numeric(train_df[col], errors="coerce")
-    train_df[ML_FEATURES] = train_df[ML_FEATURES].fillna(0)
-
+        if col not in t.columns: t[col] = 0
+        t[col] = pd.to_numeric(t[col], errors="coerce")
+    t[ML_FEATURES] = t[ML_FEATURES].fillna(0)
     le = LabelEncoder()
-    y  = le.fit_transform(train_df["Risk_Level"].astype(str))
-
-    model = RandomForestClassifier(n_estimators=200, random_state=42, class_weight="balanced")
-    model.fit(train_df[ML_FEATURES], y)
+    y  = le.fit_transform(t["Risk_Level"].astype(str))
+    model = RandomForestClassifier(n_estimators=200,random_state=42,class_weight="balanced")
+    model.fit(t[ML_FEATURES], y)
     return model, le
-
 
 ml_model, label_encoder = train_ml_model(final_df)
 
-
-def predict_ml_risk(input_data: dict, earth_data: dict):
+def predict_ml_risk(input_data, earth_data):
     row = {
-        "latitude":  input_data["latitude"],
-        "longitude": input_data["longitude"],
-        "pH": input_data["pH"], "TDS": input_data["TDS"],
-        "TH": input_data["TH"], "Ca":  input_data["Ca"],
-        "Mg": input_data["Mg"], "DO":  input_data["DO"],
-        "BOD": input_data["BOD"],
-        "temperature_2m_C":          earth_data.get("temperature_2m_C"),
-        "dewpoint_temperature_2m_C": earth_data.get("dewpoint_temperature_2m_C"),
-        "total_precipitation_sum":   earth_data.get("total_precipitation_sum"),
-        "surface_pressure":          earth_data.get("surface_pressure"),
+        "latitude":input_data["latitude"],"longitude":input_data["longitude"],
+        "pH":input_data["pH"],"TDS":input_data["TDS"],"TH":input_data["TH"],
+        "Ca":input_data["Ca"],"Mg":input_data["Mg"],"DO":input_data["DO"],"BOD":input_data["BOD"],
+        "temperature_2m_C":earth_data.get("temperature_2m_C"),
+        "dewpoint_temperature_2m_C":earth_data.get("dewpoint_temperature_2m_C"),
+        "total_precipitation_sum":earth_data.get("total_precipitation_sum"),
+        "surface_pressure":earth_data.get("surface_pressure"),
     }
     pred_df = pd.DataFrame([row])
     for col in ML_FEATURES:
         pred_df[col] = pd.to_numeric(pred_df[col], errors="coerce")
     pred_df[ML_FEATURES] = pred_df[ML_FEATURES].fillna(0)
-
-    pred_code  = ml_model.predict(pred_df[ML_FEATURES])[0]
-    pred_level = label_encoder.inverse_transform([pred_code])[0]
-    probs      = ml_model.predict_proba(pred_df[ML_FEATURES])[0]
-
-    prob_df = pd.DataFrame({
-        "Risk_Level":  label_encoder.classes_,
-        "Probability": probs,
-    }).sort_values("Probability", ascending=False)
-
-    return pred_level, prob_df
+    code  = ml_model.predict(pred_df[ML_FEATURES])[0]
+    level = label_encoder.inverse_transform([code])[0]
+    probs = ml_model.predict_proba(pred_df[ML_FEATURES])[0]
+    prob_df = pd.DataFrame({"Risk_Level":label_encoder.classes_,"Probability":probs}).sort_values("Probability",ascending=False)
+    return level, prob_df
 
 
 # ============================================================
-# LLM-STYLE EXPLANATION
+# EXPLANATION GENERATOR
 # ============================================================
-
-def build_llm_prompt(input_data, earth_data, nearest_record,
-                     ml_risk_level, rule_risk_level, rule_score,
-                     color, intensity, concerns) -> str:
-
-    selected_context = f"""
-Selected User Map Input:
-- Latitude:      {input_data['latitude']}
-- Longitude:     {input_data['longitude']}
-- Circle Radius: {input_data['radius_m']} meters
-- Circle Area:   {input_data['area_km2']:.3f} km²
-
-Planetary Computer / STAC-Derived Data:
-- Altitude:             {earth_data.get('altitude_m')} m  (Copernicus DEM 30)
-- Temperature:          {earth_data.get('temperature_2m_C')} °C  (ERA5-PDS)
-- Dewpoint Temperature: {earth_data.get('dewpoint_temperature_2m_C')} °C  (ERA5-PDS)
-- Total Precipitation:  {earth_data.get('total_precipitation_sum')}  (ERA5-PDS)
-- Surface Pressure:     {earth_data.get('surface_pressure')}  (ERA5-PDS)
-- NDVI Mean:            {earth_data.get('ndvi_mean', 'NA')}  (Sentinel-2 L2A)
-- STAC Items Found:     {earth_data.get('stac_items_found', 0)}
-- Source:               {earth_data.get('source')}
-
-User Water Quality Input:
-- pH:              {input_data['pH']}
-- TDS:             {input_data['TDS']} mg/L
-- Total Hardness:  {input_data['TH']} mg/L
-- Calcium:         {input_data['Ca']} mg/L
-- Magnesium:       {input_data['Mg']} mg/L
-- Dissolved Oxygen:{input_data['DO']} mg/L
-- BOD:             {input_data['BOD']} mg/L
-
-Nearest Reference City:
-- City:         {nearest_record.get('city', 'Unknown')}
-- Distance:     {nearest_record.get('distance_km', 0):.2f} km
-- Reference pH: {nearest_record.get('pH', 'NA')}
-- Reference TDS:{nearest_record.get('TDS', 'NA')}
-- Reference TH: {nearest_record.get('TH', 'NA')}
-- Reference Ca: {nearest_record.get('Ca', 'NA')}
-- Reference Mg: {nearest_record.get('Mg', 'NA')}
-- Reference DO: {nearest_record.get('DO', 'NA')}
-- Reference BOD:{nearest_record.get('BOD', 'NA')}
-
-Model Prediction:
-- ML Risk Level:         {ml_risk_level}
-- Rule-Based Risk Level: {rule_risk_level}
-- Rule-Based Risk Score: {rule_score}
-- Color:                 {color}
-- Color Intensity:       {intensity}
-- Concern Parameters:    {concerns}
-"""
-    return f"""
-You are a water quality and environmental monitoring expert.
-
-Use the following training/reference dataset context:
-
-{llm_context}
-
-Now analyse this selected map area:
-
-{selected_context}
-
-Prepare a clear interpretation with:
-1. Overall water quality assessment
-2. Why the model predicted this risk level
-3. Which parameters are most concerning
-4. Comparison with nearest reference city
-5. How altitude / climate may influence water quality
-6. NDVI context (vegetation density, potential agricultural/runoff risk)
-7. Possible pollution sources
-8. Monitoring and management recommendations
-"""
-
 
 def generate_explanation(input_data, earth_data, nearest_record,
                          ml_risk_level, rule_risk_level, rule_score,
-                         color, intensity, concerns, probability_df) -> str:
-
-    llm_prompt = build_llm_prompt(
-        input_data, earth_data, nearest_record,
-        ml_risk_level, rule_risk_level, rule_score,
-        color, intensity, concerns,
-    )
-
-    ndvi_str = earth_data.get("ndvi_mean", "NA")
+                         color, intensity, concerns, probability_df):
+    ndvi = earth_data.get("ndvi_mean","NA")
     ndvi_note = ""
-    if ndvi_str not in ("NA", None):
-        try:
-            ndvi_val = float(ndvi_str)
-            if ndvi_val < 0.2:
-                ndvi_note = "Very low NDVI — sparse or no vegetation; possible bare soil / urban area."
-            elif ndvi_val < 0.4:
-                ndvi_note = "Moderate NDVI — mixed land use; moderate agricultural risk."
-            else:
-                ndvi_note = "High NDVI — dense vegetation; potential fertiliser / pesticide runoff risk."
-        except ValueError:
-            pass
+    try:
+        nv = float(ndvi)
+        if nv < 0.2:   ndvi_note = "Sparse/no vegetation — possible urban or bare soil."
+        elif nv < 0.4: ndvi_note = "Mixed land use — moderate agricultural runoff risk."
+        else:          ndvi_note = "Dense vegetation — potential fertiliser/pesticide runoff."
+    except Exception:
+        pass
 
     return f"""
 <div class="risk-card" style="background:{color};">
     <div class="risk-big">{RISK_STYLE[ml_risk_level]['emoji']} {ml_risk_level} Risk</div>
-    <div class="risk-small">ML prediction · Planetary Computer STAC + water-quality dataframe</div>
-    <div class="risk-small">Rule score: {rule_score} | Color intensity: {intensity}</div>
-    <div class="risk-small">Main concerns: {concerns}</div>
-    {"<div class='risk-small'>NDVI: " + str(ndvi_str) + " — " + ndvi_note + "</div>" if ndvi_note else ""}
+    <div class="risk-small">ML · Planetary Computer STAC + water-quality dataframe</div>
+    <div class="risk-small">Rule score: {rule_score} | Intensity: {intensity}</div>
+    <div class="risk-small">⚠️ Concerns: {concerns}</div>
+    {"<div class='risk-small'>🌿 NDVI: " + str(ndvi) + " — " + ndvi_note + "</div>" if ndvi_note else ""}
 </div>
 
-### Planetary Computer Context
+**Nearest reference city:** {nearest_record.get('city','Unknown')} &nbsp;
+({nearest_record.get('distance_km',0):.2f} km away)
 
-The app queries the **Microsoft Planetary Computer STAC API** using `pystac_client` and
-`planetary_computer` for:
+**Why this risk level?**
+The Random Forest model learned from `final_df_water_quality.csv`. The selected area's
+parameters were compared against city-level patterns. Key concern parameters: **{concerns}**.
 
-| Dataset | Collection ID | Use |
-|---------|--------------|-----|
-| Copernicus DEM 30 m | `cop-dem-glo-30` | Terrain elevation |
-| ERA5 Daily Aggregates | `era5-pds` | Temperature, precipitation, pressure |
-| Sentinel-2 L2A | `sentinel-2-l2a` | NDVI / land cover |
+| Parameter | Value | Status |
+|-----------|-------|--------|
+| pH | {input_data['pH']} | {"✅" if 6.5<=float(input_data['pH'])<=8.5 else "⚠️"} |
+| TDS | {input_data['TDS']} mg/L | {"✅" if float(input_data['TDS'])<=500 else "⚠️"} |
+| Total Hardness | {input_data['TH']} mg/L | {"✅" if float(input_data['TH'])<=300 else "⚠️"} |
+| Dissolved O₂ | {input_data['DO']} mg/L | {"✅" if float(input_data['DO'])>=6 else "⚠️"} |
+| BOD | {input_data['BOD']} mg/L | {"✅" if float(input_data['BOD'])<=3 else "⚠️"} |
 
-No API key or service account is required — `planetary_computer.sign_inplace()` handles
-token signing automatically.
-
-### LLM Model Input Context
-
-```text
-{llm_prompt}
-```
-
-### LLM-Style Interpretation
-
-The selected circle area is predicted as **{ml_risk_level} risk**.
-
-The nearest reference city is **{nearest_record.get('city', 'Unknown')}**,
-approximately **{nearest_record.get('distance_km', 0):.2f} km** from the circle centre.
-
-### Why This Risk Level Was Predicted
-
-Main concern parameters: **{concerns}**
-
-The Random Forest model was trained on `final_df_water_quality.csv`.  Each city supplies
-water-quality parameters, climate features, and a labelled risk level. The selected area is
-compared against those learned patterns; Planetary Computer ERA5 data enriches the
-climate feature vector in real time.
-
-### Parameter Interpretation
-
-| Parameter | Meaning |
-|-----------|---------|
-| pH | Acidity / alkalinity — recommended 6.5–8.5 |
-| TDS | Dissolved salts, minerals, or contamination |
-| TH, Ca, Mg | Hardness and mineral load |
-| DO | Oxygen availability for aquatic life |
-| BOD | Organic pollution and oxygen demand |
-| NDVI | Vegetation density via Sentinel-2 — proxy for agricultural / runoff risk |
-
-### Recommendation
-
-Repeat sampling within the selected circle. If risk is **Moderate, High, or Very High**,
-inspect sewage discharge, drains, industrial outfalls, agricultural runoff, stagnant water,
-and high-mineral groundwater sources.
+**Altitude:** {earth_data.get('altitude_m')} m &nbsp; **Temp:** {earth_data.get('temperature_2m_C')} °C &nbsp;
+**Precip:** {earth_data.get('total_precipitation_sum')} &nbsp; **NDVI:** {ndvi}
 """
 
 
 # ============================================================
-# CHAT AGENT
+# SMART CHAT AGENT
 # ============================================================
 
-def answer_chatbot(question: str) -> str:
-    if not st.session_state.get("prediction_done"):
-        return "Please draw a circle, enter water-quality values, and click **Search Water Quality** first."
+def _city_card(row) -> str:
+    """Format a city's water quality summary."""
+    risk = row.get("Risk_Level", "NA")
+    emoji = RISK_STYLE.get(str(risk), {}).get("emoji", "⬜")
+    return (
+        f"**{row.get('city','Unknown')}** {emoji} {risk} risk\n"
+        f"- pH: {row.get('pH','NA')} | TDS: {row.get('TDS','NA')} mg/L | "
+        f"TH: {row.get('TH','NA')} mg/L\n"
+        f"- DO: {row.get('DO','NA')} mg/L | BOD: {row.get('BOD','NA')} mg/L\n"
+        f"- Ca: {row.get('Ca','NA')} mg/L | Mg: {row.get('Mg','NA')} mg/L"
+    )
 
-    q            = question.lower()
-    input_data   = st.session_state.input_data
-    earth_data   = st.session_state.earth_data
-    nearest      = st.session_state.nearest_record
 
-    if any(k in q for k in ["stac", "planetary", "copernicus", "era5", "sentinel"]):
-        return (
-            "The app uses **Microsoft Planetary Computer** via `pystac_client` and `planetary_computer`. "
-            "Collections queried: `cop-dem-glo-30` (elevation), `era5-pds` (climate), "
-            "`sentinel-2-l2a` (NDVI). No API key is needed — assets are signed automatically."
+def answer_chatbot(question: str) -> tuple[str, dict | None]:
+    """
+    Returns (answer_text, map_update_dict | None).
+    map_update_dict = {"latitude": ..., "longitude": ..., "city": ...} if map should move.
+    """
+    q   = question.lower().strip()
+    ss  = st.session_state
+
+    # ── 1. City navigation intent ──────────────────────────────────────────
+    nav_patterns = [
+        r"(go to|navigate to|show|move to|change.*?to|point.*?to|set.*?to|focus on|zoom to|take me to|look at)\s+(.+)",
+        r"(what about|tell me about|show me)\s+(.+)",
+        r"can (?:you |the )?(?:map )?(?:be |show |change to |point to )?(.+)\??$",
+    ]
+    city_name, city_row = find_city_in_text(q)
+
+    nav_intent = any(
+        kw in q for kw in [
+            "go to","navigate","show","move","change","point","focus","zoom",
+            "take me","look at","what about","tell me about","can the map",
+            "map to","map point","change map",
+        ]
+    )
+
+    if city_name and city_row is not None:
+        lat = float(city_row["latitude"])
+        lon = float(city_row["longitude"])
+        map_update = {"latitude": lat, "longitude": lon, "city": city_name}
+
+        card = _city_card(city_row)
+        reply = (
+            f"📍 Moving map to **{city_name}** (lat: {lat:.4f}, lon: {lon:.4f}).\n\n"
+            f"{card}\n\n"
+            f"The map centre has been updated. Click **Search Water Quality** to run the ML prediction for this location."
         )
+        return reply, map_update
 
-    if any(k in q for k in ["ndvi", "vegetation", "greenness"]):
-        ndvi = earth_data.get("ndvi_mean", "NA")
-        return f"NDVI for the selected area is **{ndvi}** (Sentinel-2 L2A, cloud cover < 20 %). Higher NDVI means denser vegetation."
+    # ── 2. List best / safest cities ──────────────────────────────────────
+    if any(kw in q for kw in ["best","safest","cleanest","good place","good water","safe to drink","lowest risk"]):
+        good = final_df[final_df["Risk_Level"].isin(["Very Low","Low"])].copy()
+        if good.empty:
+            good = final_df.sort_values("Risk_Score" if "Risk_Score" in final_df.columns else "BOD").head(5)
+        good = good.drop_duplicates("city").head(5)
+        lines = [f"{i+1}. {_city_card(r)}" for i, (_,r) in enumerate(good.iterrows())]
+        return "Here are the cities with the best water quality in the dataset:\n\n" + "\n\n".join(lines), None
 
-    if any(k in q for k in ["llm", "context", "prompt"]):
+    # ── 3. List worst / most polluted cities ──────────────────────────────
+    if any(kw in q for kw in ["worst","most polluted","highest risk","dangerous","bad water"]):
+        bad = final_df[final_df["Risk_Level"].isin(["Very High","High"])].copy()
+        if bad.empty:
+            bad = final_df.sort_values("BOD", ascending=False).head(5)
+        bad = bad.drop_duplicates("city").head(5)
+        lines = [f"{i+1}. {_city_card(r)}" for i, (_,r) in enumerate(bad.iterrows())]
+        return "Cities with the highest water quality risk in the dataset:\n\n" + "\n\n".join(lines), None
+
+    # ── 4. List all cities ─────────────────────────────────────────────────
+    if any(kw in q for kw in ["list cities","all cities","which cities","available cities","show cities"]):
+        cities_by_risk = final_df.drop_duplicates("city").sort_values("Risk_Level")
+        lines = []
+        for _, r in cities_by_risk.iterrows():
+            emoji = RISK_STYLE.get(str(r.get("Risk_Level","")), {}).get("emoji","⬜")
+            lines.append(f"{emoji} **{r['city']}** — {r.get('Risk_Level','NA')} risk")
+        return "**Cities in the dataset:**\n\n" + "\n".join(lines), None
+
+    # ── 5. Compare two cities ──────────────────────────────────────────────
+    if any(kw in q for kw in ["compare","vs","versus","difference between","better than"]):
+        found_cities = []
+        for city_lower, idx in city_lookup.items():
+            if re.search(r'\b' + re.escape(city_lower) + r'\b', q):
+                found_cities.append(final_df.loc[idx])
+        if len(found_cities) >= 2:
+            r1, r2 = found_cities[0], found_cities[1]
+            return (
+                f"**Comparison: {r1['city']} vs {r2['city']}**\n\n"
+                f"| Parameter | {r1['city']} | {r2['city']} |\n"
+                f"|-----------|-----------|----------|\n"
+                f"| pH | {r1.get('pH','NA')} | {r2.get('pH','NA')} |\n"
+                f"| TDS (mg/L) | {r1.get('TDS','NA')} | {r2.get('TDS','NA')} |\n"
+                f"| TH (mg/L) | {r1.get('TH','NA')} | {r2.get('TH','NA')} |\n"
+                f"| DO (mg/L) | {r1.get('DO','NA')} | {r2.get('DO','NA')} |\n"
+                f"| BOD (mg/L) | {r1.get('BOD','NA')} | {r2.get('BOD','NA')} |\n"
+                f"| Risk Level | {r1.get('Risk_Level','NA')} | {r2.get('Risk_Level','NA')} |"
+            ), None
+
+    # ── 6. Prediction-dependent questions ─────────────────────────────────
+    if not ss.get("prediction_done"):
+        # Still try to answer general questions without needing prediction
+        if any(kw in q for kw in ["ph","tds","bod","do","oxygen","hardness","risk","quality","water"]):
+            return (
+                "I can answer detailed questions about the selected area after you click "
+                "**Search Water Quality**. Or ask me about a specific city — e.g. "
+                "*'Show me Mumbai'* or *'What is the water quality in Delhi?'*"
+            ), None
         return (
-            "The app prepares an LLM-style context from the full dataframe, selected map coordinates, "
-            "circle radius, Planetary Computer variables (DEM + ERA5 + NDVI), water-quality inputs, "
-            "ML prediction, risk score, and nearest reference city."
-        )
+            "Please draw a circle on the map, enter water-quality values, and click "
+            "**Search Water Quality** — then I can answer questions about the selected area. "
+            "You can also ask me to show a specific city, e.g. *'Go to Chennai'*."
+        ), None
 
-    if any(k in q for k in ["nearest", "city", "reference"]):
+    input_data  = ss.input_data
+    earth_data  = ss.earth_data
+    nearest     = ss.nearest_record
+
+    # ── 7. Water quality / risk questions ─────────────────────────────────
+    if any(kw in q for kw in ["water quality","what is the quality","is the water","quality here","quality of water"]):
+        risk  = ss.ml_risk_level
+        color = RISK_STYLE.get(risk,{}).get("emoji","")
         return (
-            f"The nearest reference city is **{nearest.get('city', 'Unknown')}**, "
-            f"about **{nearest.get('distance_km', 0):.2f} km** from the selected circle centre."
-        )
+            f"The water quality at the selected location is predicted as "
+            f"**{color} {risk} risk**.\n\n"
+            f"- Rule-based score: **{ss.rule_score}** / 9\n"
+            f"- Main concerns: **{ss.concerns}**\n"
+            f"- Nearest reference city: **{nearest.get('city','Unknown')}** "
+            f"({nearest.get('distance_km',0):.2f} km away, "
+            f"{nearest.get('Risk_Level','NA')} risk)"
+        ), None
 
-    if any(k in q for k in ["risk", "prediction", "result"]):
+    if any(kw in q for kw in ["risk","prediction","result","level","danger"]):
         return (
-            f"The ML model predicts **{st.session_state.ml_risk_level}** risk. "
-            f"Rule-based score: {st.session_state.rule_score}. "
-            f"Main concerns: {st.session_state.concerns}."
-        )
+            f"**ML prediction: {RISK_STYLE.get(ss.ml_risk_level,{}).get('emoji','')} {ss.ml_risk_level} risk**\n\n"
+            f"Rule-based score: {ss.rule_score} | Concerns: {ss.concerns}"
+        ), None
 
-    if "bod" in q:
-        return f"BOD is **{input_data['BOD']} mg/L**. Higher BOD suggests organic pollution and increased oxygen demand."
-
-    if "do" in q or "oxygen" in q:
-        return f"DO is **{input_data['DO']} mg/L**. Low DO may indicate stagnation, sewage influence, or algal bloom."
+    # ── 8. Individual parameter questions ─────────────────────────────────
+    if "ph" in q:
+        v = input_data['pH']; s, m = parameter_status("pH", v)
+        return f"**pH = {v}** — {m}. {'✅ Good' if s=='Good' else '⚠️ ' + s}. Recommended range: 6.5–8.5.", None
 
     if "tds" in q:
-        return f"TDS is **{input_data['TDS']} mg/L**. High TDS can indicate mineral loading, salinity, or contamination."
+        v = input_data['TDS']; s, m = parameter_status("TDS", v)
+        return f"**TDS = {v} mg/L** — {m}. {'✅ Good' if s=='Good' else '⚠️ ' + s}. Below 500 mg/L is ideal.", None
 
-    if "ph" in q:
-        return f"pH is **{input_data['pH']}**. Recommended range is 6.5–8.5."
+    if any(kw in q for kw in ["hardness","total hardness"," th "]):
+        v = input_data['TH']; s, m = parameter_status("TH", v)
+        return f"**Total Hardness = {v} mg/L** — {m}. {'✅ Good' if s=='Good' else '⚠️ ' + s}. Below 300 mg/L is acceptable.", None
 
-    if "hardness" in q or " th" in q:
-        return f"Total Hardness is **{input_data['TH']} mg/L**. High hardness is linked to calcium- and magnesium-rich groundwater."
+    if any(kw in q for kw in ["bod","biological oxygen","biochemical"]):
+        v = input_data['BOD']; s, m = parameter_status("BOD", v)
+        return f"**BOD = {v} mg/L** — {m}. {'✅ Good' if s=='Good' else '⚠️ ' + s}. Below 3 mg/L indicates clean water.", None
 
-    if any(k in q for k in ["altitude", "elevation", "dem"]):
-        return f"Elevation for the selected area is **{earth_data.get('altitude_m')} m** (Copernicus DEM 30 via Planetary Computer)."
+    if any(kw in q for kw in [" do ", "dissolved oxygen","oxygen level"]):
+        v = input_data['DO']; s, m = parameter_status("DO", v)
+        return f"**Dissolved Oxygen = {v} mg/L** — {m}. {'✅ Good' if s=='Good' else '⚠️ ' + s}. Above 6 mg/L is healthy.", None
 
-    if any(k in q for k in ["area", "radius", "circle"]):
+    if any(kw in q for kw in ["calcium"," ca "]):
+        return f"**Calcium (Ca) = {input_data['Ca']} mg/L** — mineral component contributing to water hardness.", None
+
+    if any(kw in q for kw in ["magnesium"," mg "]):
+        return f"**Magnesium (Mg) = {input_data['Mg']} mg/L** — mineral component contributing to water hardness.", None
+
+    # ── 9. Environmental / satellite data ─────────────────────────────────
+    if any(kw in q for kw in ["altitude","elevation","dem","height"]):
+        return f"**Elevation = {earth_data.get('altitude_m')} m** (Copernicus DEM 30 via Planetary Computer).", None
+
+    if any(kw in q for kw in ["temperature","temp","climate","weather"]):
         return (
-            f"Circle radius: **{input_data['radius_m']} m** · "
-            f"Area: **{input_data['area_km2']:.3f} km²**."
-        )
+            f"**Temperature = {earth_data.get('temperature_2m_C')} °C** (ERA5-PDS, Jan 2023)\n"
+            f"Dewpoint = {earth_data.get('dewpoint_temperature_2m_C')} °C | "
+            f"Precipitation = {earth_data.get('total_precipitation_sum')} | "
+            f"Pressure = {earth_data.get('surface_pressure')} Pa"
+        ), None
 
+    if any(kw in q for kw in ["ndvi","vegetation","greenness","plant"]):
+        ndvi = earth_data.get("ndvi_mean","NA")
+        try:
+            nv = float(ndvi)
+            note = "sparse vegetation" if nv<0.2 else "moderate vegetation" if nv<0.4 else "dense vegetation"
+            return f"**NDVI = {ndvi}** — {note} (Sentinel-2 L2A). Higher NDVI → more agricultural runoff risk.", None
+        except Exception:
+            return f"NDVI data not available for this location (value: {ndvi}).", None
+
+    # ── 10. Nearest city ────────────────────────────────────────────────────
+    if any(kw in q for kw in ["nearest","closest","near","reference city","nearby"]):
+        return (
+            f"The nearest reference city is **{nearest.get('city','Unknown')}**, "
+            f"**{nearest.get('distance_km',0):.2f} km** from the selected circle centre.\n\n"
+            f"{_city_card(nearest)}"
+        ), None
+
+    # ── 11. Circle / area info ──────────────────────────────────────────────
+    if any(kw in q for kw in ["area","radius","circle","location","coordinates","lat","lon"]):
+        return (
+            f"**Selected circle:**\n"
+            f"- Centre: {input_data['latitude']:.6f}, {input_data['longitude']:.6f}\n"
+            f"- Radius: {input_data['radius_m']} m\n"
+            f"- Area: {input_data['area_km2']:.3f} km²"
+        ), None
+
+    # ── 12. Planetary Computer / STAC ──────────────────────────────────────
+    if any(kw in q for kw in ["planetary","stac","copernicus","era5","sentinel","satellite"]):
+        return (
+            "The app queries **Microsoft Planetary Computer** via `pystac_client` and `planetary_computer`.\n\n"
+            "| Collection | Data |\n|---|---|\n"
+            "| `cop-dem-glo-30` | Terrain elevation |\n"
+            "| `era5-pds` | Temperature, precipitation, pressure |\n"
+            "| `sentinel-2-l2a` | NDVI / vegetation |\n\n"
+            "No API key needed — assets are signed automatically."
+        ), None
+
+    # ── 13. Summary / help ──────────────────────────────────────────────────
+    if any(kw in q for kw in ["help","what can","summary","overview","tell me everything"]):
+        return (
+            "**I can answer:**\n"
+            "- 📍 *'Go to Mumbai'* / *'Show Delhi on the map'* → moves the map\n"
+            "- 💧 *'What is the water quality?'* → risk level & concerns\n"
+            "- 📊 *'What is the pH / TDS / BOD / DO?'* → parameter details\n"
+            "- 🏙️ *'Which city is nearest?'* → reference city\n"
+            "- 🌿 *'Best cities for water quality?'* → top safe cities\n"
+            "- ⚠️ *'Worst / most polluted cities?'* → high-risk cities\n"
+            "- 🔬 *'Compare Mumbai and Delhi'* → side-by-side table\n"
+            "- 🛰️ *'What is the NDVI / altitude / temperature?'* → satellite data"
+        ), None
+
+    # ── 14. Fallback ────────────────────────────────────────────────────────
     return (
-        f"The selected area is predicted as **{st.session_state.ml_risk_level}** risk. "
-        f"Nearest reference city: **{nearest.get('city', 'Unknown')}**. "
-        f"Main concerns: {st.session_state.concerns}."
-    )
+        f"The selected area shows **{ss.ml_risk_level} risk** "
+        f"(nearest city: **{nearest.get('city','Unknown')}**, {nearest.get('distance_km',0):.2f} km away).\n\n"
+        f"Concerns: {ss.concerns}.\n\n"
+        "Try asking: *'What is the water quality?'*, *'Go to Mumbai'*, *'Best cities?'*, or *'Compare Delhi and Chennai'*."
+    ), None
 
 
 # ============================================================
@@ -789,11 +729,12 @@ defaults = {
     "prediction_done":      False,
     "chat_history":         [],
     "last_input_signature": None,
+    "map_moved_by_chat":    False,
 }
 
-for key, value in defaults.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 
 # ============================================================
@@ -804,7 +745,7 @@ left_col, map_col, chat_col = st.columns([1.05, 2.15, 1.15])
 
 
 # ============================================================
-# LEFT PANEL  –  Water Inputs
+# LEFT PANEL
 # ============================================================
 
 with left_col:
@@ -814,25 +755,23 @@ with left_col:
         latitude  = st.number_input("Center latitude",  value=float(st.session_state.latitude),  format="%.6f")
         longitude = st.number_input("Center longitude", value=float(st.session_state.longitude), format="%.6f")
         radius_m  = st.number_input("Radius meters",    value=float(st.session_state.radius_m),  min_value=50.0, step=100.0)
-
         st.session_state.latitude  = latitude
         st.session_state.longitude = longitude
         st.session_state.radius_m  = radius_m
         st.caption(f"Area: {circle_area_km2(radius_m):.3f} km²")
 
-    pH  = st.slider("pH",                      0.0, 14.0,  7.2, 0.1)
-    TDS = st.number_input("TDS mg/L",          value=450.0,  step=10.0)
-    TH  = st.number_input("Total Hardness mg/L", value=180.0, step=10.0)
-    Ca  = st.number_input("Calcium mg/L",      value=60.0,  step=1.0)
-    Mg  = st.number_input("Magnesium mg/L",    value=25.0,  step=1.0)
-    DO  = st.slider("Dissolved Oxygen mg/L",   0.0, 15.0,  6.5, 0.1)
-    BOD = st.slider("BOD mg/L",                0.0, 20.0,  3.2, 0.1)
+    pH  = st.slider("pH",                       0.0, 14.0,  7.2, 0.1)
+    TDS = st.number_input("TDS mg/L",           value=450.0, step=10.0)
+    TH  = st.number_input("Total Hardness mg/L",value=180.0, step=10.0)
+    Ca  = st.number_input("Calcium mg/L",       value=60.0,  step=1.0)
+    Mg  = st.number_input("Magnesium mg/L",     value=25.0,  step=1.0)
+    DO  = st.slider("Dissolved Oxygen mg/L",    0.0, 15.0,  6.5, 0.1)
+    BOD = st.slider("BOD mg/L",                 0.0, 20.0,  3.2, 0.1)
 
     input_data = {
-        "latitude": latitude, "longitude": longitude,
-        "radius_m": radius_m, "area_km2": circle_area_km2(radius_m),
-        "pH": pH, "TDS": TDS, "TH": TH,
-        "Ca": Ca, "Mg": Mg, "DO": DO, "BOD": BOD,
+        "latitude":latitude,"longitude":longitude,"radius_m":radius_m,
+        "area_km2":circle_area_km2(radius_m),
+        "pH":pH,"TDS":TDS,"TH":TH,"Ca":Ca,"Mg":Mg,"DO":DO,"BOD":BOD,
     }
 
     current_sig = tuple(input_data.values())
@@ -842,7 +781,7 @@ with left_col:
         st.session_state.prediction_done      = False
         st.session_state.last_input_signature = current_sig
 
-    search_clicked = st.button("Search Water Quality", use_container_width=True)
+    search_clicked = st.button("🔍 Search Water Quality", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     # Legend
@@ -864,26 +803,40 @@ with left_col:
 with map_col:
     st.markdown('<div class="panel"><div class="panel-title">2. Circle Map Area</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="hint-box">Draw or edit one circle. '
-        'The app uses the circle centre and radius for prediction.</div>',
+        '<div class="hint-box">💡 Draw a circle on the map, or ask the chat agent '
+        '<b>"Go to Mumbai"</b> to navigate to a city automatically.</div>',
         unsafe_allow_html=True,
     )
 
     m = folium.Map(
         location=[st.session_state.latitude, st.session_state.longitude],
-        zoom_start=6,
-        tiles="OpenStreetMap",
+        zoom_start=6, tiles="OpenStreetMap",
     )
 
     Draw(
         export=True,
-        draw_options={
-            "polyline": False, "rectangle": False, "polygon": False,
-            "circle": True, "marker": False, "circlemarker": False,
-        },
-        edit_options={"edit": True, "remove": True},
+        draw_options={"polyline":False,"rectangle":False,"polygon":False,
+                      "circle":True,"marker":False,"circlemarker":False},
+        edit_options={"edit":True,"remove":True},
     ).add_to(m)
 
+    # Show all dataset cities as small markers
+    for _, row in final_df.drop_duplicates("city").iterrows():
+        risk    = str(row.get("Risk_Level","NA"))
+        clr     = RISK_STYLE.get(risk, {}).get("color","#999")
+        folium.CircleMarker(
+            location=[float(row["latitude"]), float(row["longitude"])],
+            radius=5, color=clr, fill=True, fill_color=clr, fill_opacity=0.7,
+            tooltip=f"{row['city']} — {risk}",
+            popup=folium.Popup(
+                f"<b>{row['city']}</b><br>Risk: {risk}<br>"
+                f"pH:{row.get('pH','NA')} TDS:{row.get('TDS','NA')}<br>"
+                f"DO:{row.get('DO','NA')} BOD:{row.get('BOD','NA')}",
+                max_width=200,
+            ),
+        ).add_to(m)
+
+    # Selected circle
     folium.Circle(
         location=[st.session_state.latitude, st.session_state.longitude],
         radius=st.session_state.radius_m,
@@ -893,8 +846,8 @@ with map_col:
 
     folium.Marker(
         [st.session_state.latitude, st.session_state.longitude],
-        popup="Circle centre used for prediction",
-        tooltip="Circle centre",
+        popup="Circle centre", tooltip="Circle centre",
+        icon=folium.Icon(color="blue", icon="tint", prefix="fa"),
     ).add_to(m)
 
     if st.session_state.prediction_done:
@@ -910,9 +863,8 @@ with map_col:
     add_map_legend(m)
 
     map_data = st_folium(
-        m,
-        height=610, width=900,
-        returned_objects=["last_active_drawing", "all_drawings"],
+        m, height=610, width=900,
+        returned_objects=["last_active_drawing","all_drawings"],
         key="water_quality_circle_map",
     )
 
@@ -926,7 +878,7 @@ with map_col:
             st.session_state.prediction_done = False
 
     st.info(
-        f"Circle centre: {st.session_state.latitude:.6f}, {st.session_state.longitude:.6f} | "
+        f"📍 Centre: {st.session_state.latitude:.6f}, {st.session_state.longitude:.6f} | "
         f"Radius: {st.session_state.radius_m:.1f} m | "
         f"Area: {circle_area_km2(st.session_state.radius_m):.3f} km²"
     )
@@ -938,42 +890,74 @@ with map_col:
 # ============================================================
 
 with chat_col:
-    st.markdown('<div class="panel"><div class="panel-title">3. Chat Agent</div>', unsafe_allow_html=True)
-    st.caption("Ask questions after Search Water Quality.")
+    st.markdown('<div class="panel"><div class="panel-title">3. 🤖 Smart Chat Agent</div>', unsafe_allow_html=True)
 
-    question   = st.text_area(
-        "Ask about selected area",
-        placeholder="Example: What does the NDVI value suggest?",
-        height=110,
+    st.markdown("""
+    <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:8px 12px;font-size:12px;color:#166534;margin-bottom:10px;">
+    💡 Try: <b>"Go to Mumbai"</b> · <b>"Best cities?"</b> · <b>"What is the water quality?"</b> · <b>"Compare Delhi and Chennai"</b>
+    </div>
+    """, unsafe_allow_html=True)
+
+    question    = st.text_area(
+        "Ask about water quality or a city:",
+        placeholder="e.g. 'Go to Mumbai' or 'What is the BOD?'",
+        height=90,
+        key="chat_input",
     )
-    ask_clicked = st.button("Ask Chat Agent", use_container_width=True)
+    ask_clicked = st.button("💬 Ask", use_container_width=True)
 
     if ask_clicked and question.strip():
-        answer = answer_chatbot(question)
-        st.session_state.chat_history.append({"question": question, "answer": answer})
+        answer, map_update = answer_chatbot(question)
 
-    for chat in reversed(st.session_state.chat_history[-5:]):
-        st.markdown(f'<div class="chat-user"><b>User:</b> {chat["question"]}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="chat-agent"><b>Agent:</b> {chat["answer"]}</div>', unsafe_allow_html=True)
+        # If chatbot wants to move map
+        if map_update:
+            st.session_state.latitude  = map_update["latitude"]
+            st.session_state.longitude = map_update["longitude"]
+            st.session_state.prediction_done   = False
+            st.session_state.map_moved_by_chat = True
+
+        st.session_state.chat_history.append({
+            "question": question,
+            "answer":   answer,
+            "map_update": map_update,
+        })
+        st.rerun()
+
+    # Render chat history
+    for chat in reversed(st.session_state.chat_history[-6:]):
+        mu = chat.get("map_update")
+        st.markdown(
+            f'<div class="chat-label chat-user-label">You</div>'
+            f'<div class="chat-bubble-user">{chat["question"]}</div>',
+            unsafe_allow_html=True,
+        )
+        agent_text = chat["answer"]
+        if mu:
+            agent_text = f"🗺️ Map moved to **{mu['city']}**\n\n" + agent_text
+        st.markdown(
+            f'<div class="chat-label chat-agent-label">Agent</div>'
+            f'<div class="chat-bubble-agent">{agent_text}</div>',
+            unsafe_allow_html=True,
+        )
+
+    if st.button("🗑️ Clear chat", use_container_width=True):
+        st.session_state.chat_history = []
+        st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # System status panel
-    st.markdown('<div class="panel"><div class="panel-title">System</div>', unsafe_allow_html=True)
+    # System panel
+    st.markdown('<div class="panel"><div class="panel-title">⚙️ System</div>', unsafe_allow_html=True)
     if STAC_READY and pc_catalog is not None:
-        st.success("Planetary Computer STAC connected")
-        st.caption(pc_message)
+        st.success("✅ Planetary Computer connected")
     elif STAC_READY:
-        st.warning("pystac_client installed but catalog failed")
-        st.caption(pc_message)
+        st.warning("⚠️ Catalog connection failed")
     else:
-        st.warning("pystac_client / planetary_computer not installed")
-        st.caption("Install: pip install pystac-client planetary-computer stackstac rasterio")
+        st.warning("⚠️ STAC libraries not installed")
+        st.caption("pip install pystac-client planetary-computer stackstac rasterio")
 
-    st.write("Training rows:", len(final_df))
-    st.write("ML model: Random Forest")
-    st.write("Remote sensing: Planetary Computer STAC")
-    st.write("Data sources: Copernicus DEM 30, ERA5-PDS, Sentinel-2 L2A")
+    st.caption(f"Dataset: {len(final_df)} cities | ML: Random Forest | "
+               f"Remote sensing: PC STAC")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -982,12 +966,12 @@ with chat_col:
 # ============================================================
 
 if search_clicked:
-    with st.spinner("Querying Planetary Computer STAC…"):
+    with st.spinner("🛰️ Querying Planetary Computer STAC…"):
         earth_data = extract_pc_data(latitude, longitude, radius_m)
 
     nearest_record = find_nearest_dataframe_record(latitude, longitude)
     rule_level, rule_score, concerns = calculate_rule_risk(input_data)
-    ml_risk_level, probability_df    = predict_ml_risk(input_data, earth_data)
+    ml_risk_level, probability_df   = predict_ml_risk(input_data, earth_data)
 
     if ml_risk_level not in RISK_STYLE:
         ml_risk_level = rule_level
@@ -1002,18 +986,18 @@ if search_clicked:
     )
 
     st.session_state.update({
-        "prediction_done":  True,
-        "input_data":       input_data,
-        "earth_data":       earth_data,
-        "nearest_record":   nearest_record,
-        "ml_risk_level":    ml_risk_level,
-        "rule_risk_level":  rule_level,
-        "rule_score":       rule_score,
-        "map_color":        map_color,
-        "intensity":        intensity,
-        "concerns":         concerns,
-        "explanation":      explanation,
-        "probability_df":   probability_df,
+        "prediction_done": True,
+        "input_data":      input_data,
+        "earth_data":      earth_data,
+        "nearest_record":  nearest_record,
+        "ml_risk_level":   ml_risk_level,
+        "rule_risk_level": rule_level,
+        "rule_score":      rule_score,
+        "map_color":       map_color,
+        "intensity":       intensity,
+        "concerns":        concerns,
+        "explanation":     explanation,
+        "probability_df":  probability_df,
     })
 
 
@@ -1022,11 +1006,10 @@ if search_clicked:
 # ============================================================
 
 st.divider()
-
 dash_col, result_col = st.columns([1.1, 2.1])
 
 with dash_col:
-    st.markdown('<div class="panel"><div class="panel-title">Input Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="panel"><div class="panel-title">📊 Input Dashboard</div>', unsafe_allow_html=True)
 
     param_rows = [
         {
@@ -1035,90 +1018,78 @@ with dash_col:
             "Status":    parameter_status(p, input_data[p])[0],
             "Meaning":   parameter_status(p, input_data[p])[1],
         }
-        for p in ["pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD"]
+        for p in ["pH","TDS","TH","Ca","Mg","DO","BOD"]
     ]
     st.dataframe(pd.DataFrame(param_rows), use_container_width=True, height=280)
-
     st.bar_chart(
         pd.DataFrame({
-            "Parameter": ["pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD"],
-            "Value":     [pH, TDS, TH, Ca, Mg, DO, BOD],
+            "Parameter": ["pH","TDS","TH","Ca","Mg","DO","BOD"],
+            "Value":     [pH,TDS,TH,Ca,Mg,DO,BOD],
         }).set_index("Parameter")
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-
 with result_col:
-    st.markdown('<div class="panel"><div class="panel-title">Search Result</div>', unsafe_allow_html=True)
+    st.markdown('<div class="panel"><div class="panel-title">🔎 Search Result</div>', unsafe_allow_html=True)
 
     if not st.session_state.prediction_done:
-        st.info("Draw a circle, enter inputs, then click Search Water Quality.")
+        st.info("Draw a circle, enter inputs, then click **Search Water Quality**.\n\n"
+                "Or ask the chat agent: *'Go to Mumbai'* to navigate to a city.")
     else:
         st.markdown(st.session_state.explanation, unsafe_allow_html=True)
 
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("ML Risk",       st.session_state.ml_risk_level)
-        c2.metric("Rule Score",    st.session_state.rule_score)
-        c3.metric("Color",         st.session_state.map_color)
-        c4.metric("Intensity",     st.session_state.intensity)
-        c5.metric("Nearest City",  st.session_state.nearest_record.get("city", "NA"))
+        c1,c2,c3,c4,c5 = st.columns(5)
+        c1.metric("ML Risk",     st.session_state.ml_risk_level)
+        c2.metric("Rule Score",  st.session_state.rule_score)
+        c3.metric("Color",       st.session_state.map_color)
+        c4.metric("Intensity",   st.session_state.intensity)
+        c5.metric("Nearest City",st.session_state.nearest_record.get("city","NA"))
 
         st.progress(min(st.session_state.rule_score / 9, 1.0))
 
-        with st.expander("ML Class Probabilities", expanded=False):
+        with st.expander("ML Class Probabilities"):
             st.dataframe(st.session_state.probability_df, use_container_width=True)
             st.bar_chart(st.session_state.probability_df.set_index("Risk_Level")["Probability"])
 
-        with st.expander("Nearest Reference City", expanded=False):
-            nearest_df = pd.DataFrame([st.session_state.nearest_record])
-            show_cols  = [c for c in [
-                "city", "distance_km", "latitude", "longitude",
-                "pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD",
-                "Risk_Level", "Risk_Score",
-            ] if c in nearest_df.columns]
-            st.dataframe(nearest_df[show_cols], use_container_width=True)
+        with st.expander("Nearest Reference City"):
+            ndf = pd.DataFrame([st.session_state.nearest_record])
+            show = [c for c in ["city","distance_km","latitude","longitude",
+                                 "pH","TDS","TH","Ca","Mg","DO","BOD","Risk_Level","Risk_Score"]
+                    if c in ndf.columns]
+            st.dataframe(ndf[show], use_container_width=True)
 
-        with st.expander("Planetary Computer STAC Data", expanded=False):
+        with st.expander("🛰️ Planetary Computer STAC Data"):
             st.json(st.session_state.earth_data)
 
-        with st.expander("Prepared LLM Context from Full Dataframe", expanded=False):
-            st.text(llm_context)
+        with st.expander("LLM Context from Dataframe"):
+            st.text(llm_context[:3000] + "\n...[truncated]" if len(llm_context) > 3000 else llm_context)
 
-        # Download
         result_df = pd.DataFrame([{
-            "latitude":           st.session_state.latitude,
-            "longitude":          st.session_state.longitude,
-            "radius_m":           st.session_state.radius_m,
-            "area_km2":           circle_area_km2(st.session_state.radius_m),
-            "nearest_city":       st.session_state.nearest_record.get("city", "NA"),
-            "nearest_distance_km":st.session_state.nearest_record.get("distance_km", "NA"),
-            "ML_Risk_Level":      st.session_state.ml_risk_level,
-            "Rule_Risk_Level":    st.session_state.rule_risk_level,
-            "Rule_Score":         st.session_state.rule_score,
-            "Color":              st.session_state.map_color,
-            "Intensity":          st.session_state.intensity,
-            "Concern_Parameters": st.session_state.concerns,
-            "altitude_m":         st.session_state.earth_data.get("altitude_m"),
-            "temperature_2m_C":   st.session_state.earth_data.get("temperature_2m_C"),
-            "dewpoint_2m_C":      st.session_state.earth_data.get("dewpoint_temperature_2m_C"),
-            "precipitation":      st.session_state.earth_data.get("total_precipitation_sum"),
-            "surface_pressure":   st.session_state.earth_data.get("surface_pressure"),
-            "ndvi_mean":          st.session_state.earth_data.get("ndvi_mean"),
-            "stac_items_found":   st.session_state.earth_data.get("stac_items_found"),
-            "pH":                 st.session_state.input_data["pH"],
-            "TDS":                st.session_state.input_data["TDS"],
-            "TH":                 st.session_state.input_data["TH"],
-            "Ca":                 st.session_state.input_data["Ca"],
-            "Mg":                 st.session_state.input_data["Mg"],
-            "DO":                 st.session_state.input_data["DO"],
-            "BOD":                st.session_state.input_data["BOD"],
+            "latitude":st.session_state.latitude,"longitude":st.session_state.longitude,
+            "radius_m":st.session_state.radius_m,"area_km2":circle_area_km2(st.session_state.radius_m),
+            "nearest_city":st.session_state.nearest_record.get("city","NA"),
+            "nearest_distance_km":st.session_state.nearest_record.get("distance_km","NA"),
+            "ML_Risk_Level":st.session_state.ml_risk_level,
+            "Rule_Risk_Level":st.session_state.rule_risk_level,
+            "Rule_Score":st.session_state.rule_score,
+            "Color":st.session_state.map_color,"Intensity":st.session_state.intensity,
+            "Concern_Parameters":st.session_state.concerns,
+            "altitude_m":st.session_state.earth_data.get("altitude_m"),
+            "temperature_2m_C":st.session_state.earth_data.get("temperature_2m_C"),
+            "dewpoint_2m_C":st.session_state.earth_data.get("dewpoint_temperature_2m_C"),
+            "precipitation":st.session_state.earth_data.get("total_precipitation_sum"),
+            "surface_pressure":st.session_state.earth_data.get("surface_pressure"),
+            "ndvi_mean":st.session_state.earth_data.get("ndvi_mean"),
+            "pH":st.session_state.input_data["pH"],"TDS":st.session_state.input_data["TDS"],
+            "TH":st.session_state.input_data["TH"],"Ca":st.session_state.input_data["Ca"],
+            "Mg":st.session_state.input_data["Mg"],"DO":st.session_state.input_data["DO"],
+            "BOD":st.session_state.input_data["BOD"],
         }])
 
         st.download_button(
-            "Download Search Result CSV",
+            "⬇️ Download Search Result CSV",
             result_df.to_csv(index=False),
-            "water_quality_search_result.csv",
-            "text/csv",
+            "water_quality_search_result.csv","text/csv",
             use_container_width=True,
         )
 
