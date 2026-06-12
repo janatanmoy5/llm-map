@@ -730,3 +730,497 @@ The app builds an LLM-style prompt from full dataframe context, selected map cir
 
 ```text
 {llm_prompt}
+```
+
+### LLM-Style Interpretation
+
+The selected circle area is predicted as **{ml_risk_level} risk**.
+
+The nearest reference city is **{nearest_record.get('city', 'Unknown')}**, located approximately **{nearest_record.get('distance_km', 0):.2f} km** from the selected circle center.
+
+### Why This Risk Level Was Predicted
+
+The main concern parameters are:
+
+**{concerns}**
+
+The ML model was trained from `final_df_water_quality.csv`, where each city has water-quality parameters, climate features, and a labeled risk level. The selected area is compared against those learned patterns.
+
+### Parameter Interpretation
+
+- **pH** indicates acidity or alkalinity.
+- **TDS** indicates dissolved salts, minerals, or contamination input.
+- **TH, Ca, and Mg** indicate hardness and mineral load.
+- **DO** indicates oxygen availability for aquatic life.
+- **BOD** indicates organic pollution and oxygen demand.
+
+### Recommendation
+
+Repeat sampling within the selected circle area. If risk is **Moderate, High, or Very High**, inspect sewage discharge, drains, industrial discharge, agricultural runoff, stagnant water, and possible high-mineral groundwater sources.
+"""
+
+
+# ============================================================
+# CHAT AGENT
+# ============================================================
+
+def answer_chatbot(question):
+    if not st.session_state.get("prediction_done"):
+        return "Please draw a circle, enter water-quality values, and click **Search Water Quality** first."
+
+    q = question.lower()
+    input_data = st.session_state.input_data
+    earth_data = st.session_state.earth_data
+    nearest = st.session_state.nearest_record
+
+    if "llm" in q or "context" in q or "prompt" in q:
+        return (
+            "The app prepares an LLM-style context from the full dataframe, selected map coordinates, "
+            "circle radius, Earth Engine variables, water-quality inputs, ML prediction, risk score, "
+            "and nearest reference city."
+        )
+
+    if "nearest" in q or "city" in q or "reference" in q:
+        return (
+            f"The nearest reference city is {nearest.get('city', 'Unknown')}, "
+            f"about {nearest.get('distance_km', 0):.2f} km from the selected circle center."
+        )
+
+    if "risk" in q or "prediction" in q or "result" in q:
+        return (
+            f"The ML model predicts {st.session_state.ml_risk_level} risk. "
+            f"The rule-based score is {st.session_state.rule_score}. "
+            f"Main concerns: {st.session_state.concerns}."
+        )
+
+    if "bod" in q:
+        return f"BOD is {input_data['BOD']} mg/L. Higher BOD suggests organic pollution and oxygen demand."
+
+    if "do" in q or "oxygen" in q:
+        return f"DO is {input_data['DO']} mg/L. Low DO may indicate oxygen stress, stagnation, or sewage influence."
+
+    if "tds" in q:
+        return f"TDS is {input_data['TDS']} mg/L. High TDS can indicate mineral loading, salinity, or contamination input."
+
+    if "ph" in q:
+        return f"pH is {input_data['pH']}. Recommended range is usually 6.5–8.5."
+
+    if "hardness" in q or "th" in q:
+        return f"Total hardness is {input_data['TH']} mg/L. High hardness is usually related to calcium and magnesium-rich water."
+
+    if "altitude" in q or "elevation" in q:
+        return f"Altitude for the selected circle area is {earth_data.get('altitude_m')} meters."
+
+    if "area" in q or "radius" in q or "circle" in q:
+        return f"The selected circle radius is {input_data['radius_m']} meters and area is {input_data['area_km2']:.3f} km²."
+
+    return (
+        f"The selected circle area is predicted as {st.session_state.ml_risk_level} risk. "
+        f"The nearest reference city is {nearest.get('city', 'Unknown')}. "
+        f"Main concerns: {st.session_state.concerns}."
+    )
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+defaults = {
+    "latitude": float(final_df["latitude"].iloc[0]),
+    "longitude": float(final_df["longitude"].iloc[0]),
+    "radius_m": 1000.0,
+    "drawn_area": None,
+    "prediction_done": False,
+    "chat_history": [],
+    "last_input_signature": None,
+}
+
+for key, value in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+# ============================================================
+# THREE PANEL GUI
+# ============================================================
+
+left_col, map_col, chat_col = st.columns([1.05, 2.15, 1.15])
+
+
+# ============================================================
+# LEFT PANEL
+# ============================================================
+
+with left_col:
+    st.markdown('<div class="panel"><div class="panel-title">1. Water Inputs</div>', unsafe_allow_html=True)
+
+    with st.expander("Circle area", expanded=True):
+        latitude = st.number_input(
+            "Center latitude",
+            value=float(st.session_state.latitude),
+            format="%.6f",
+        )
+
+        longitude = st.number_input(
+            "Center longitude",
+            value=float(st.session_state.longitude),
+            format="%.6f",
+        )
+
+        radius_m = st.number_input(
+            "Radius meters",
+            value=float(st.session_state.radius_m),
+            min_value=50.0,
+            step=100.0,
+        )
+
+        st.session_state.latitude = latitude
+        st.session_state.longitude = longitude
+        st.session_state.radius_m = radius_m
+
+        st.caption(f"Area: {circle_area_km2(radius_m):.3f} km²")
+
+    pH = st.slider("pH", 0.0, 14.0, 7.2, 0.1)
+    TDS = st.number_input("TDS mg/L", value=450.0, step=10.0)
+    TH = st.number_input("Total Hardness mg/L", value=180.0, step=10.0)
+    Ca = st.number_input("Calcium mg/L", value=60.0, step=1.0)
+    Mg = st.number_input("Magnesium mg/L", value=25.0, step=1.0)
+    DO = st.slider("Dissolved Oxygen mg/L", 0.0, 15.0, 6.5, 0.1)
+    BOD = st.slider("BOD mg/L", 0.0, 20.0, 3.2, 0.1)
+
+    input_data = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "radius_m": radius_m,
+        "area_km2": circle_area_km2(radius_m),
+        "pH": pH,
+        "TDS": TDS,
+        "TH": TH,
+        "Ca": Ca,
+        "Mg": Mg,
+        "DO": DO,
+        "BOD": BOD,
+    }
+
+    current_signature = tuple(input_data.values())
+
+    if st.session_state.last_input_signature is None:
+        st.session_state.last_input_signature = current_signature
+
+    if current_signature != st.session_state.last_input_signature:
+        st.session_state.prediction_done = False
+        st.session_state.last_input_signature = current_signature
+
+    search_clicked = st.button("Search Water Quality", use_container_width=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown('<div class="panel"><div class="panel-title">Legend</div>', unsafe_allow_html=True)
+
+    for level, info in RISK_STYLE.items():
+        st.markdown(
+            f"""
+            <div class="legend-row">
+                <span class="legend-dot" style="background:{info['color']};"></span>
+                {info['emoji']} {level}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ============================================================
+# MAP PANEL
+# ============================================================
+
+with map_col:
+    st.markdown('<div class="panel"><div class="panel-title">2. Circle Map Area</div>', unsafe_allow_html=True)
+
+    st.markdown(
+        """
+        <div class="hint-box">
+        Draw or edit one circle. The app uses the circle center and radius for prediction.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    m = folium.Map(
+        location=[st.session_state.latitude, st.session_state.longitude],
+        zoom_start=6,
+        tiles="OpenStreetMap",
+    )
+
+    Draw(
+        export=True,
+        draw_options={
+            "polyline": False,
+            "rectangle": False,
+            "polygon": False,
+            "circle": True,
+            "marker": False,
+            "circlemarker": False,
+        },
+        edit_options={"edit": True, "remove": True},
+    ).add_to(m)
+
+    folium.Circle(
+        location=[st.session_state.latitude, st.session_state.longitude],
+        radius=st.session_state.radius_m,
+        color="#2563EB",
+        fill=True,
+        fill_color="#93C5FD",
+        fill_opacity=0.22,
+        popup="Selected circle area",
+    ).add_to(m)
+
+    folium.Marker(
+        [st.session_state.latitude, st.session_state.longitude],
+        popup="Circle center used for prediction",
+        tooltip="Circle center",
+    ).add_to(m)
+
+    if st.session_state.prediction_done:
+        folium.Circle(
+            location=[st.session_state.latitude, st.session_state.longitude],
+            radius=st.session_state.radius_m,
+            color=st.session_state.map_color,
+            fill=True,
+            fill_color=st.session_state.map_color,
+            fill_opacity=st.session_state.intensity,
+            popup=f"{st.session_state.ml_risk_level} Risk",
+        ).add_to(m)
+
+    add_map_legend(m)
+
+    map_data = st_folium(
+        m,
+        height=610,
+        width=900,
+        returned_objects=["last_active_drawing", "all_drawings"],
+        key="water_quality_circle_map",
+    )
+
+    if map_data and map_data.get("last_active_drawing"):
+        st.session_state.drawn_area = map_data["last_active_drawing"]
+
+        lat, lon, drawn_radius = get_circle_from_geometry(st.session_state.drawn_area)
+
+        if lat is not None and lon is not None:
+            st.session_state.latitude = lat
+            st.session_state.longitude = lon
+            st.session_state.radius_m = drawn_radius
+            st.session_state.prediction_done = False
+
+    st.info(
+        f"Circle center: {st.session_state.latitude:.6f}, {st.session_state.longitude:.6f} | "
+        f"Radius: {st.session_state.radius_m:.1f} m | "
+        f"Area: {circle_area_km2(st.session_state.radius_m):.3f} km²"
+    )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ============================================================
+# CHAT PANEL
+# ============================================================
+
+with chat_col:
+    st.markdown('<div class="panel"><div class="panel-title">3. Chat Agent</div>', unsafe_allow_html=True)
+
+    st.caption("Ask questions after Search Water Quality.")
+
+    question = st.text_area(
+        "Ask about selected area",
+        placeholder="Example: Why is this risk level predicted?",
+        height=110,
+    )
+
+    ask_clicked = st.button("Ask Chat Agent", use_container_width=True)
+
+    if ask_clicked and question.strip():
+        answer = answer_chatbot(question)
+        st.session_state.chat_history.append({"question": question, "answer": answer})
+
+    for chat in reversed(st.session_state.chat_history[-5:]):
+        st.markdown(f'<div class="chat-user"><b>User:</b> {chat["question"]}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="chat-agent"><b>Agent:</b> {chat["answer"]}</div>', unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown('<div class="panel"><div class="panel-title">System</div>', unsafe_allow_html=True)
+
+    if gee_ready:
+        st.success("Earth Engine connected")
+    else:
+        st.warning("Earth Engine not connected")
+        st.caption("Climate and altitude will show NA.")
+
+    st.write("Training rows:", len(final_df))
+    st.write("ML model: Random Forest")
+    st.write("LLM context: Prepared from dataframe")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ============================================================
+# SEARCH ACTION
+# ============================================================
+
+if search_clicked:
+    earth_data = extract_earth_engine_data(latitude, longitude, radius_m)
+    nearest_record = find_nearest_dataframe_record(latitude, longitude)
+
+    rule_level, rule_score, concerns = calculate_rule_risk(input_data)
+    ml_risk_level, probability_df = predict_ml_risk(input_data, earth_data)
+
+    if ml_risk_level not in RISK_STYLE:
+        ml_risk_level = rule_level
+
+    map_color = RISK_STYLE[ml_risk_level]["color"]
+    intensity = RISK_STYLE[ml_risk_level]["intensity"]
+
+    explanation = generate_explanation(
+        input_data,
+        earth_data,
+        nearest_record,
+        ml_risk_level,
+        rule_level,
+        rule_score,
+        map_color,
+        intensity,
+        concerns,
+        probability_df,
+    )
+
+    st.session_state.prediction_done = True
+    st.session_state.input_data = input_data
+    st.session_state.earth_data = earth_data
+    st.session_state.nearest_record = nearest_record
+    st.session_state.ml_risk_level = ml_risk_level
+    st.session_state.rule_risk_level = rule_level
+    st.session_state.rule_score = rule_score
+    st.session_state.map_color = map_color
+    st.session_state.intensity = intensity
+    st.session_state.concerns = concerns
+    st.session_state.explanation = explanation
+    st.session_state.probability_df = probability_df
+
+
+# ============================================================
+# DASHBOARD + RESULT
+# ============================================================
+
+st.divider()
+
+dash_col, result_col = st.columns([1.1, 2.1])
+
+with dash_col:
+    st.markdown('<div class="panel"><div class="panel-title">Input Dashboard</div>', unsafe_allow_html=True)
+
+    param_rows = []
+
+    for param in ["pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD"]:
+        status, meaning = parameter_status(param, input_data[param])
+        param_rows.append(
+            {
+                "Parameter": param,
+                "Value": input_data[param],
+                "Status": status,
+                "Meaning": meaning,
+            }
+        )
+
+    st.dataframe(pd.DataFrame(param_rows), use_container_width=True, height=280)
+
+    chart_df = pd.DataFrame(
+        {
+            "Parameter": ["pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD"],
+            "Value": [pH, TDS, TH, Ca, Mg, DO, BOD],
+        }
+    )
+
+    st.bar_chart(chart_df.set_index("Parameter"))
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+with result_col:
+    st.markdown('<div class="panel"><div class="panel-title">Search Result</div>', unsafe_allow_html=True)
+
+    if not st.session_state.prediction_done:
+        st.info("Draw a circle, enter inputs, then click Search Water Quality.")
+    else:
+        st.markdown(st.session_state.explanation, unsafe_allow_html=True)
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+
+        c1.metric("ML Risk", st.session_state.ml_risk_level)
+        c2.metric("Rule Score", st.session_state.rule_score)
+        c3.metric("Color", st.session_state.map_color)
+        c4.metric("Intensity", st.session_state.intensity)
+        c5.metric("Nearest City", st.session_state.nearest_record.get("city", "NA"))
+
+        st.progress(min(st.session_state.rule_score / 9, 1.0))
+
+        with st.expander("ML Class Probabilities", expanded=False):
+            st.dataframe(st.session_state.probability_df, use_container_width=True)
+            st.bar_chart(st.session_state.probability_df.set_index("Risk_Level")["Probability"])
+
+        with st.expander("Nearest Reference City", expanded=False):
+            nearest_df = pd.DataFrame([st.session_state.nearest_record])
+            show_cols = [
+                c
+                for c in [
+                    "city", "distance_km", "latitude", "longitude",
+                    "pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD",
+                    "Risk_Level", "Risk_Score",
+                ]
+                if c in nearest_df.columns
+            ]
+            st.dataframe(nearest_df[show_cols], use_container_width=True)
+
+        with st.expander("Google Earth Engine Data", expanded=False):
+            st.json(st.session_state.earth_data)
+
+        with st.expander("Prepared LLM Context from Full Dataframe", expanded=False):
+            st.text(llm_context)
+
+        result_df = pd.DataFrame(
+            [
+                {
+                    "latitude": st.session_state.latitude,
+                    "longitude": st.session_state.longitude,
+                    "radius_m": st.session_state.radius_m,
+                    "area_km2": circle_area_km2(st.session_state.radius_m),
+                    "nearest_city": st.session_state.nearest_record.get("city", "NA"),
+                    "nearest_distance_km": st.session_state.nearest_record.get("distance_km", "NA"),
+                    "ML_Risk_Level": st.session_state.ml_risk_level,
+                    "Rule_Risk_Level": st.session_state.rule_risk_level,
+                    "Rule_Score": st.session_state.rule_score,
+                    "Color": st.session_state.map_color,
+                    "Intensity": st.session_state.intensity,
+                    "Concern_Parameters": st.session_state.concerns,
+                    "altitude_m": st.session_state.earth_data.get("altitude_m"),
+                    "pH": st.session_state.input_data["pH"],
+                    "TDS": st.session_state.input_data["TDS"],
+                    "TH": st.session_state.input_data["TH"],
+                    "Ca": st.session_state.input_data["Ca"],
+                    "Mg": st.session_state.input_data["Mg"],
+                    "DO": st.session_state.input_data["DO"],
+                    "BOD": st.session_state.input_data["BOD"],
+                }
+            ]
+        )
+
+        st.download_button(
+            "Download Search Result CSV",
+            result_df.to_csv(index=False),
+            "water_quality_search_result.csv",
+            "text/csv",
+            use_container_width=True,
+        )
+
+    st.markdown("</div>", unsafe_allow_html=True)
