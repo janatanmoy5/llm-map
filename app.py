@@ -1,5 +1,158 @@
-# app.py
+Claude finished the response
 
+can modify the whole and rewrite include  import pystac_client import planetary_computer
+12:44 AM
+Check available skills
+
+I'll rewrite the full app.py to replace the Google Earth Engine integration with pystac_client + planetary_computer (Microsoft Planetary Computer), which is open and requires no service account credentials.
+Created a file, read a file
+
+Here's what changed in the full rewrite:
+
+Google Earth Engine → Planetary Computer STAC
+Old (GEE)	New (Planetary Computer)
+import ee	import pystac_client, import planetary_computer
+ee.ServiceAccountCredentials(...)	pystac_client.Client.open(PC_STAC_API, modifier=planetary_computer.sign_inplace)
+ee.ImageCollection("ECMWF/ERA5_LAND/...")	catalog.search(collections=["era5-pds"], ...)
+ee.Image("USGS/SRTMGL1_003")	catalog.search(collections=["cop-dem-glo-30"], ...)
+No vegetation data	catalog.search(collections=["sentinel-2-l2a"], ...) → NDVI
+
+Key improvements:
+
+    No credentials needed — planetary_computer.sign_inplace() auto-signs asset URLs (free, open access)
+    Three STAC collections queried: Copernicus DEM 30 m (elevation), ERA5-PDS (temperature, dewpoint, precipitation, pressure), and Sentinel-2 L2A (NDVI as a bonus land-cover proxy)
+    NDVI is surfaced in the risk card, LLM prompt, chat agent, and download CSV
+    stackstac is used for lazy array reading from STAC items; rasterio for windowed reads on ERA5 assets
+    Graceful fallback — if any collection query fails the value is "NA" and the app continues
+
+Install dependencies:
+bash
+
+pip install pystac-client planetary-computer stackstac rasterio
+
+App
+PY 
+
+what will be requirements.txt it will github, stremalit could hosting
+12:49 AM
+Created a file, read a file
+
+Your GitHub repo structure for Streamlit Cloud should look like this:
+
+your-repo/
+├── app.py
+├── requirements.txt
+└── data/
+    └── final_df_water_quality.csv
+
+Deployment steps:
+
+    Push all three to GitHub (the data/ folder must be committed too)
+    Go to share.streamlit.io → New app → connect your repo
+    Set Main file path to app.py
+    Click Deploy
+
+A few things to keep in mind for Streamlit Cloud:
+
+    rasterio and stackstac are compiled packages — Streamlit Cloud handles them fine, but the first cold boot may take 3–4 minutes while it builds the environment.
+    If your CSV is large (> 50 MB), consider storing it in GitHub LFS or loading from a public URL instead.
+    Planetary Computer queries happen at runtime over HTTPS — no secrets or tokens needed, so nothing goes in .streamlit/secrets.toml for that.
+    If you later add other secrets (e.g. an LLM API key), add them via the Secrets panel in the Streamlit Cloud dashboard, not hardcoded in the repo.
+
+Requirements
+TXT 
+
+where app.py
+12:50 AM
+
+The app.py was already generated in the previous step — you can download it from the file link above in this conversation. But let me re-present it:
+Presented 2 files
+
+Both files are ready to download — app.py and requirements.txt. Click the file links above to download them, then add your data/final_df_water_quality.csv and push all three to your GitHub repo.
+App
+PY 
+Requirements
+TXT 
+
+rewrite the code chatbot can take the input user ask to give input city the map should chnage accroingly to users query User: Can the change map point be Mumbai?
+Agent: Total Hardness is **180.0 mg/L**. High hardness is linked to calcium- and magnesium-rich groundwater.
+User: What is the water quality? Is there any good place to look at?
+Agent: Total Hardness is **180.0 mg/L**. High hardness is linked to calcium- and magnesium-rich groundwater.
+User: what is the water quality?
+Agent: Total Hardness is **180.0 mg/L**. High hardness is linked to calcium- and magnesium-rich groundwater.
+User: which city is nearest?
+Agent: The nearest reference city is **Kolkata**, about **472.71 km** from the selected circle centre.
+12:55 AM
+Read the existing app.py to rewrite it
+
+Now I have the full picture. I'll rewrite with a smart chatbot that:
+
+    Detects city name mentions → updates map location + loads that city's data
+    Answers natural language questions about water quality, risk, parameters, comparisons
+    Handles "show me good cities", "which city has best water", etc.
+
+Ran a command, read a file
+
+Here's what the smart chatbot can now do:
+
+🗺️ City Navigation (moves the map automatically)
+User says	What happens
+"Go to Mumbai"	Map moves to Mumbai's coordinates, loads its water data, prompts to Search
+"Show me Delhi"	Same — works with any city in your dataset
+"Can the map point to Chennai?"	Detected via regex + word-boundary city matching
+
+💧 Water Quality Questions
+User says	Answer
+"What is the water quality?"	Risk level + emoji + concerns + nearest city
+"What is the BOD?"	Value + status + threshold explanation
+"What is the pH / TDS / DO / hardness?"	Individual parameter with ✅/⚠️ status
+
+🏙️ City Comparisons & Lists
+User says	Answer
+"Best cities for water quality?"	Top 5 Very Low/Low risk cities as cards
+"Worst / most polluted cities?"	Top 5 High/Very High risk cities
+"Compare Mumbai and Delhi"	Side-by-side parameter table
+"List all cities"	Full list with risk emoji
+
+Other improvements:
+
+    All dataset cities are now shown as colored dots on the map (click for popup)
+    Chat bubbles have a proper speech-bubble UI with user/agent labels
+    st.rerun() is called after city navigation so the map actually updates
+    Clear chat button added
+    Fallback always gives a useful answer, never just repeats hardness
+
+App
+PY 
+
+Page header not looks opening, half of page ios opening, can edit GUI that can support any device and any screen
+1:02 AM
+Viewed 2 files
+
+Now I have a clear picture. I'll replace the entire CSS block and the header, and restructure the layout to be fully responsive — using a sticky header, tab-based mobile layout, and fluid columns.
+Edited 2 files
+
+Now replace the plain header with the new sticky header bar:
+Replace plain header with sticky responsive header bar
+
+Now fix the three-column layout to use fluid responsive ratios and wrap panel titles:
+Fix column ratios to be more balanced and responsive
+
+Now update the left panel title and hint, and fix the map hint box:
+Edited 3 files, ran a command, viewed a file
+
+Now make the map height responsive and fix the bottom dashboard columns:
+Edited 2 files, ran a command
+
+Now update the chat panel and system panel titles, and wrap the chat history in the scroll div:
+Ran a command, viewed a file, edited a file
+You are out of free messages until 5:40 AM
+
+
+Claude is AI and can make mistakes. Please double-check responses.
+App · PY
+# app.py
+ 
 import os
 import re
 import math
@@ -12,7 +165,7 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder
-
+ 
 # ---- Planetary Computer / STAC imports ----
 try:
     import pystac_client
@@ -23,22 +176,23 @@ try:
     STAC_READY = True
 except Exception:
     STAC_READY = False
-
+ 
 warnings.filterwarnings("ignore")
-
-
+ 
+ 
 # ============================================================
 # APP CONFIG
 # ============================================================
-
+ 
 st.set_page_config(
     page_title="Water Quality AI Map",
     layout="wide",
     initial_sidebar_state="collapsed",
+    page_icon="💧",
 )
-
+ 
 DATA_FILE = "data/final_df_water_quality.csv"
-
+ 
 RISK_STYLE = {
     "Very Low":  {"color": "#2E7D32", "emoji": "🟢", "intensity": 0.25},
     "Low":       {"color": "#66BB6A", "emoji": "🟩", "intensity": 0.40},
@@ -46,96 +200,298 @@ RISK_STYLE = {
     "High":      {"color": "#E53935", "emoji": "🔴", "intensity": 0.75},
     "Very High": {"color": "#7F0000", "emoji": "🟥", "intensity": 0.90},
 }
-
+ 
 PC_STAC_API = "https://planetarycomputer.microsoft.com/api/stac/v1"
-
-
+ 
+ 
 # ============================================================
 # CSS
 # ============================================================
-
+ 
 st.markdown("""
 <style>
-.block-container { padding-top:1.2rem; padding-left:1.2rem; padding-right:1.2rem; }
-.app-title  { font-size:34px; font-weight:850; color:#0F172A; margin-bottom:0; }
-.app-subtitle { color:#64748B; font-size:15px; margin-bottom:16px; }
+/* ── Reset & base ──────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+ 
+/* Remove Streamlit default top padding and make full-width */
+.block-container {
+    padding-top: 0 !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+    padding-bottom: 1rem !important;
+    max-width: 100% !important;
+}
+ 
+/* Hide default Streamlit header/footer chrome */
+header[data-testid="stHeader"] { display: none !important; }
+footer { display: none !important; }
+#MainMenu { display: none !important; }
+ 
+/* ── Sticky app header bar ─────────────────────────────────────── */
+.app-header {
+    position: sticky;
+    top: 0;
+    z-index: 9999;
+    background: linear-gradient(90deg, #0F172A 0%, #1E3A5F 100%);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+    margin-left: -0.75rem;
+    margin-right: -0.75rem;
+    margin-bottom: 12px;
+    width: calc(100% + 1.5rem);
+}
+.app-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+.app-header-icon {
+    font-size: 28px;
+    flex-shrink: 0;
+}
+.app-title {
+    font-size: clamp(16px, 2.5vw, 26px);
+    font-weight: 800;
+    color: #FFFFFF;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+    line-height: 1.2;
+}
+.app-subtitle {
+    font-size: clamp(10px, 1.3vw, 13px);
+    color: #94A3B8;
+    margin: 0;
+    line-height: 1.3;
+}
+.app-header-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.badge {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #E2E8F0;
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.badge-green  { background: rgba(34,197,94,0.2);  border-color: rgba(34,197,94,0.4);  color: #86EFAC; }
+.badge-blue   { background: rgba(59,130,246,0.2);  border-color: rgba(59,130,246,0.4); color: #93C5FD; }
+.badge-orange { background: rgba(251,146,60,0.2);  border-color: rgba(251,146,60,0.4); color: #FED7AA; }
+ 
+/* ── Panels ────────────────────────────────────────────────────── */
 .panel {
-    background:#FFFFFF; border:1px solid #E5E7EB; border-radius:18px;
-    padding:16px; box-shadow:0px 5px 18px rgba(15,23,42,0.06); margin-bottom:14px;
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 14px;
+    padding: 14px;
+    box-shadow: 0 2px 10px rgba(15,23,42,0.06);
+    margin-bottom: 12px;
+    height: auto;
+    overflow: visible;
 }
-.panel-title { font-size:18px; font-weight:800; color:#0F172A; margin-bottom:10px; }
+.panel-title {
+    font-size: clamp(13px, 1.5vw, 16px);
+    font-weight: 800;
+    color: #0F172A;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-bottom: 2px solid #F1F5F9;
+    padding-bottom: 8px;
+}
+ 
+/* ── Hint box ──────────────────────────────────────────────────── */
 .hint-box {
-    background:#EFF6FF; border:1px solid #BFDBFE; color:#1E3A8A;
-    border-radius:14px; padding:12px; font-size:14px; margin-bottom:12px;
+    background: #EFF6FF;
+    border: 1px solid #BFDBFE;
+    color: #1E3A8A;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: clamp(11px, 1.2vw, 13px);
+    margin-bottom: 10px;
+    line-height: 1.5;
 }
+ 
+/* ── Risk card ─────────────────────────────────────────────────── */
 .risk-card {
-    padding:22px; border-radius:18px; color:white;
-    box-shadow:0px 8px 22px rgba(0,0,0,0.18); margin-bottom:14px;
+    padding: 16px 18px;
+    border-radius: 14px;
+    color: white;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+    margin-bottom: 12px;
 }
-.risk-big  { font-size:31px; font-weight:850; line-height:1.1; }
-.risk-small { font-size:14px; margin-top:6px; }
-.legend-row { display:flex; align-items:center; margin-bottom:7px; font-size:14px; color:#334155; }
-.legend-dot { height:13px; width:13px; border-radius:50%; display:inline-block; margin-right:8px; }
+.risk-big   { font-size: clamp(20px, 2.5vw, 28px); font-weight: 850; line-height: 1.2; }
+.risk-small { font-size: clamp(11px, 1.2vw, 13px); margin-top: 5px; opacity: 0.92; }
+ 
+/* ── Legend ────────────────────────────────────────────────────── */
+.legend-row   { display:flex; align-items:center; margin-bottom:5px; font-size:clamp(11px,1.2vw,13px); color:#334155; }
+.legend-dot   { height:11px; width:11px; border-radius:50%; display:inline-block; margin-right:7px; flex-shrink:0; }
+ 
+/* ── Chat bubbles ──────────────────────────────────────────────── */
+.chat-scroll {
+    max-height: 340px;
+    overflow-y: auto;
+    padding-right: 4px;
+    scroll-behavior: smooth;
+}
+.chat-scroll::-webkit-scrollbar { width: 4px; }
+.chat-scroll::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+ 
 .chat-bubble-user {
     background: linear-gradient(135deg,#DBEAFE,#EFF6FF);
-    border:1px solid #BFDBFE; border-radius:16px 16px 4px 16px;
-    padding:10px 14px; margin-bottom:6px; color:#1E3A8A; font-size:14px;
-    max-width:92%; margin-left:auto;
+    border: 1px solid #BFDBFE;
+    border-radius: 16px 16px 4px 16px;
+    padding: 9px 13px;
+    margin-bottom: 5px;
+    color: #1E3A8A;
+    font-size: clamp(11px,1.2vw,13px);
+    width: fit-content;
+    max-width: 94%;
+    margin-left: auto;
+    word-break: break-word;
 }
 .chat-bubble-agent {
     background: linear-gradient(135deg,#F1F5F9,#F8FAFC);
-    border:1px solid #E2E8F0; border-radius:16px 16px 16px 4px;
-    padding:10px 14px; margin-bottom:12px; color:#334155; font-size:14px;
-    max-width:92%;
+    border: 1px solid #E2E8F0;
+    border-radius: 16px 16px 16px 4px;
+    padding: 9px 13px;
+    margin-bottom: 10px;
+    color: #334155;
+    font-size: clamp(11px,1.2vw,13px);
+    max-width: 94%;
+    word-break: break-word;
 }
-.chat-label { font-size:11px; font-weight:700; margin-bottom:3px; }
-.chat-user-label  { color:#3B82F6; }
-.chat-agent-label { color:#64748B; }
-.city-tag {
-    display:inline-block; background:#DBEAFE; color:#1D4ED8;
-    border-radius:8px; padding:2px 8px; font-size:12px; font-weight:600;
-    margin-right:4px;
-}
+.chat-label           { font-size: 10px; font-weight: 700; margin-bottom: 2px; }
+.chat-user-label      { color: #3B82F6; text-align: right; }
+.chat-agent-label     { color: #64748B; }
+ 
+/* ── Param tags ────────────────────────────────────────────────── */
 .param-good     { color:#16A34A; font-weight:700; }
 .param-moderate { color:#D97706; font-weight:700; }
 .param-concern  { color:#DC2626; font-weight:700; }
+ 
+/* ── Tip banner ────────────────────────────────────────────────── */
+.tip-banner {
+    background: #F0FDF4;
+    border: 1px solid #BBF7D0;
+    border-radius: 10px;
+    padding: 7px 12px;
+    font-size: clamp(10px,1.1vw,12px);
+    color: #166534;
+    margin-bottom: 10px;
+    line-height: 1.5;
+}
+ 
+/* ── Responsive: tablets (≤ 1024px) ───────────────────────────── */
+@media (max-width: 1024px) {
+    .app-header-badges { display: none; }
+    .block-container   { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+}
+ 
+/* ── Responsive: mobile (≤ 768px) ─────────────────────────────── */
+@media (max-width: 768px) {
+    .app-header        { padding: 8px 12px; }
+    .app-title         { font-size: 15px; }
+    .app-subtitle      { display: none; }
+    .panel             { padding: 10px; border-radius: 10px; }
+    .panel-title       { font-size: 13px; }
+    .risk-big          { font-size: 20px; }
+    .chat-scroll       { max-height: 220px; }
+    .block-container   { padding-left: 0.25rem !important; padding-right: 0.25rem !important; }
+}
+ 
+/* ── Streamlit widget font scaling ────────────────────────────── */
+.stSlider label, .stNumberInput label, .stTextArea label,
+.stButton button, .stMetric label, .stMetric [data-testid="stMetricValue"] {
+    font-size: clamp(11px, 1.2vw, 14px) !important;
+}
+.stButton > button {
+    width: 100%;
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+    padding: 8px 12px !important;
+    transition: all 0.2s;
+}
+.stButton > button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+ 
+/* Primary search button */
+div[data-testid="column"] .stButton > button:first-child,
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #1D4ED8, #2563EB) !important;
+    color: white !important;
+    border: none !important;
+}
+ 
+/* Make expanders compact */
+.streamlit-expanderHeader { font-size: clamp(11px,1.2vw,13px) !important; }
+ 
+/* Dataframe responsive */
+[data-testid="stDataFrame"] { width: 100% !important; }
+ 
+/* Map container full width */
+.folium-map { width: 100% !important; }
+ 
+/* Info/warning boxes */
+.stAlert { border-radius: 10px !important; font-size: clamp(11px,1.2vw,13px) !important; }
 </style>
 """, unsafe_allow_html=True)
-
-
+ 
+ 
 # ============================================================
-# HEADER
+# HEADER  –  sticky, responsive
 # ============================================================
-
-st.markdown('<div class="app-title">💧 Water Quality AI Map</div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="app-subtitle">'
-    "Left: water inputs &nbsp;|&nbsp; Center: interactive map &nbsp;|&nbsp; "
-    "Right: smart chat agent — ask about cities, water quality, risk levels, comparisons"
-    "</div>",
-    unsafe_allow_html=True,
-)
-
-
+ 
+st.markdown("""
+<div class="app-header">
+  <div class="app-header-left">
+    <span class="app-header-icon">💧</span>
+    <div>
+      <div class="app-title">Water Quality AI Map</div>
+      <div class="app-subtitle">Inputs &nbsp;·&nbsp; Interactive Map &nbsp;·&nbsp; Smart Chat Agent</div>
+    </div>
+  </div>
+  <div class="app-header-badges">
+    <span class="badge badge-blue">🛰️ Planetary Computer</span>
+    <span class="badge badge-green">🤖 ML Risk Model</span>
+    <span class="badge badge-orange">💬 City Chat Agent</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+ 
+ 
 # ============================================================
 # LOAD CSV
 # ============================================================
-
+ 
 if not os.path.exists(DATA_FILE):
     st.error("Missing file: data/final_df_water_quality.csv")
     st.stop()
-
+ 
 final_df = pd.read_csv(DATA_FILE)
-
+ 
 if "Unnamed: 0" in final_df.columns:
     final_df = final_df.drop(columns=["Unnamed: 0"])
-
+ 
 required_cols = ["city", "pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD", "Risk_Level", "latitude", "longitude"]
 for col in required_cols:
     if col not in final_df.columns:
         st.error(f"Missing required column in CSV: {col}")
         st.stop()
-
+ 
 numeric_cols = [
     "temperature_2m", "temperature_2m_C", "dewpoint_temperature_2m", "dewpoint_temperature_2m_C",
     "total_precipitation_sum", "surface_pressure",
@@ -145,18 +501,18 @@ numeric_cols = [
 for col in numeric_cols:
     if col in final_df.columns:
         final_df[col] = pd.to_numeric(final_df[col], errors="coerce")
-
+ 
 final_df = final_df.dropna(subset=["latitude", "longitude"])
-
+ 
 # Build lowercase city lookup for fast fuzzy matching
 city_lookup = {row["city"].lower().strip(): idx for idx, row in final_df.iterrows()}
 all_city_names = [row["city"] for _, row in final_df.iterrows()]
-
-
+ 
+ 
 # ============================================================
 # CITY FUZZY MATCH
 # ============================================================
-
+ 
 def find_city_in_text(text: str):
     """
     Return (city_name, df_row) if any city from the dataset is mentioned
@@ -167,7 +523,7 @@ def find_city_in_text(text: str):
     best_city = None
     best_row  = None
     best_len  = 0
-
+ 
     for city_lower, idx in city_lookup.items():
         # Match whole word / city name inside the text
         if re.search(r'\b' + re.escape(city_lower) + r'\b', text_lower):
@@ -175,14 +531,14 @@ def find_city_in_text(text: str):
                 best_len  = len(city_lower)
                 best_city = final_df.loc[idx, "city"]
                 best_row  = final_df.loc[idx]
-
+ 
     return best_city, best_row
-
-
+ 
+ 
 # ============================================================
 # FULL DATAFRAME → LLM CONTEXT
 # ============================================================
-
+ 
 def dataframe_to_llm_context(df: pd.DataFrame) -> str:
     rows = []
     for _, row in df.iterrows():
@@ -196,14 +552,14 @@ City: {row.get('city','Unknown')}
 - Temp:{row.get('temperature_2m_C','NA')}°C  Precip:{row.get('total_precipitation_sum','NA')}
 """)
     return "\n".join(rows)
-
+ 
 llm_context = dataframe_to_llm_context(final_df)
-
-
+ 
+ 
 # ============================================================
 # PLANETARY COMPUTER
 # ============================================================
-
+ 
 @st.cache_resource
 def get_pc_catalog():
     if not STAC_READY:
@@ -215,16 +571,16 @@ def get_pc_catalog():
         return catalog, "Planetary Computer STAC catalog connected."
     except Exception as exc:
         return None, str(exc)
-
+ 
 pc_catalog, pc_message = get_pc_catalog()
-
-
+ 
+ 
 def _bbox_from_point(lat, lon, radius_m):
     deg_lat = radius_m / 111_320
     deg_lon = radius_m / (111_320 * math.cos(math.radians(lat)))
     return [lon - deg_lon, lat - deg_lat, lon + deg_lon, lat + deg_lat]
-
-
+ 
+ 
 def extract_pc_data(latitude, longitude, radius_m):
     empty = {
         "altitude_m": "NA", "temperature_2m_C": "NA",
@@ -235,10 +591,10 @@ def extract_pc_data(latitude, longitude, radius_m):
     if pc_catalog is None or not STAC_READY:
         empty["source"] = "Planetary Computer not available"
         return empty
-
+ 
     bbox   = _bbox_from_point(latitude, longitude, max(radius_m, 5_000))
     result = dict(empty)
-
+ 
     # DEM
     try:
         items = list(pc_catalog.search(collections=["cop-dem-glo-30"], bbox=bbox, max_items=4).items())
@@ -251,7 +607,7 @@ def extract_pc_data(latitude, longitude, radius_m):
                 result["altitude_m"] = round(float(np.nanmean(valid)), 2)
     except Exception as exc:
         result["altitude_m"] = f"DEM error: {exc}"
-
+ 
     # ERA5
     try:
         era5_items = list(pc_catalog.search(
@@ -260,7 +616,7 @@ def extract_pc_data(latitude, longitude, radius_m):
         ).items())
         result["stac_items_found"] += len(era5_items)
         temps, dewps, precips, pressures = [], [], [], []
-
+ 
         for item in era5_items:
             def _read(key):
                 if key not in item.assets: return None
@@ -272,17 +628,17 @@ def extract_pc_data(latitude, longitude, radius_m):
                         return float(np.nanmean(vd)) if vd.size else None
                 except Exception:
                     return None
-
+ 
             t = _read("2m_temperature");      t and temps.append(t)
             d = _read("2m_dewpoint_temperature"); d and dewps.append(d)
             p = _read("total_precipitation"); p and precips.append(p)
             s = _read("surface_pressure");    s and pressures.append(s)
-
+ 
         def _k2c(vals):
             if not vals: return "NA"
             m = float(np.mean(vals))
             return round(m - 273.15, 2) if m > 100 else round(m, 2)
-
+ 
         result["temperature_2m_C"]          = _k2c(temps)
         result["dewpoint_temperature_2m_C"] = _k2c(dewps)
         result["total_precipitation_sum"]   = round(float(np.mean(precips)), 6) if precips else "NA"
@@ -290,7 +646,7 @@ def extract_pc_data(latitude, longitude, radius_m):
         result["source"] = "Copernicus DEM 30 + ERA5-PDS via Planetary Computer STAC"
     except Exception as exc:
         result["source"] = f"ERA5 query error: {exc}"
-
+ 
     # Sentinel-2 NDVI
     try:
         s2_items = list(pc_catalog.search(
@@ -313,16 +669,16 @@ def extract_pc_data(latitude, longitude, radius_m):
                 result["ndvi_mean"] = round(float(np.nanmean(valid)), 4)
     except Exception:
         pass
-
+ 
     return result
-
-
+ 
+ 
 # ============================================================
 # UTILITIES
 # ============================================================
-
+ 
 def circle_area_km2(r): return math.pi * (r / 1000) ** 2
-
+ 
 def get_circle_from_geometry(drawing):
     if not drawing: return None, None, None
     geom  = drawing.get("geometry", {})
@@ -331,7 +687,7 @@ def get_circle_from_geometry(drawing):
         lon, lat = geom["coordinates"]
         return float(lat), float(lon), float(props.get("radius", 1000.0))
     return None, None, None
-
+ 
 def calculate_rule_risk(row):
     score, reasons = 0, []
     pH = float(row["pH"]); TDS = float(row["TDS"]); TH = float(row["TH"])
@@ -349,7 +705,7 @@ def calculate_rule_risk(row):
     )
     if not reasons: reasons.append("all parameters within low-risk range")
     return level, score, "; ".join(reasons)
-
+ 
 def parameter_status(param, value):
     v = float(value)
     if param == "pH":
@@ -363,18 +719,18 @@ def parameter_status(param, value):
     if param == "BOD":
         return ("Good","Low load") if v<=3 else ("Moderate","Some pollution") if v<=6 else ("High","High pollution")
     return ("Info","Mineral")
-
+ 
 def haversine_km(lat1,lon1,lat2,lon2):
     R=6371.0; lat1,lon1,lat2,lon2 = map(math.radians,[float(lat1),float(lon1),float(lat2),float(lon2)])
     dlat,dlon=lat2-lat1,lon2-lon1
     a=math.sin(dlat/2)**2+math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
     return R*2*math.atan2(math.sqrt(a),math.sqrt(1-a))
-
+ 
 def find_nearest_dataframe_record(latitude, longitude):
     df = final_df.copy()
     df["distance_km"] = df.apply(lambda r: haversine_km(latitude,longitude,r["latitude"],r["longitude"]),axis=1)
     return df.sort_values("distance_km").iloc[0]
-
+ 
 def add_map_legend(m):
     html = """<div style="position:fixed;bottom:35px;left:35px;width:185px;z-index:9999;
     background:white;border:2px solid #999;border-radius:10px;padding:12px;font-size:14px;
@@ -385,17 +741,17 @@ def add_map_legend(m):
     <span style="color:#E53935;">●</span> High<br>
     <span style="color:#7F0000;">●</span> Very High</div>"""
     m.get_root().html.add_child(folium.Element(html))
-
-
+ 
+ 
 # ============================================================
 # ML MODEL
 # ============================================================
-
+ 
 ML_FEATURES = [
     "latitude","longitude","pH","TDS","TH","Ca","Mg","DO","BOD",
     "temperature_2m_C","dewpoint_temperature_2m_C","total_precipitation_sum","surface_pressure",
 ]
-
+ 
 @st.cache_resource
 def train_ml_model(df):
     t = df.copy()
@@ -408,9 +764,9 @@ def train_ml_model(df):
     model = RandomForestClassifier(n_estimators=200,random_state=42,class_weight="balanced")
     model.fit(t[ML_FEATURES], y)
     return model, le
-
+ 
 ml_model, label_encoder = train_ml_model(final_df)
-
+ 
 def predict_ml_risk(input_data, earth_data):
     row = {
         "latitude":input_data["latitude"],"longitude":input_data["longitude"],
@@ -430,12 +786,12 @@ def predict_ml_risk(input_data, earth_data):
     probs = ml_model.predict_proba(pred_df[ML_FEATURES])[0]
     prob_df = pd.DataFrame({"Risk_Level":label_encoder.classes_,"Probability":probs}).sort_values("Probability",ascending=False)
     return level, prob_df
-
-
+ 
+ 
 # ============================================================
 # EXPLANATION GENERATOR
 # ============================================================
-
+ 
 def generate_explanation(input_data, earth_data, nearest_record,
                          ml_risk_level, rule_risk_level, rule_score,
                          color, intensity, concerns, probability_df):
@@ -448,7 +804,7 @@ def generate_explanation(input_data, earth_data, nearest_record,
         else:          ndvi_note = "Dense vegetation — potential fertiliser/pesticide runoff."
     except Exception:
         pass
-
+ 
     return f"""
 <div class="risk-card" style="background:{color};">
     <div class="risk-big">{RISK_STYLE[ml_risk_level]['emoji']} {ml_risk_level} Risk</div>
@@ -457,14 +813,14 @@ def generate_explanation(input_data, earth_data, nearest_record,
     <div class="risk-small">⚠️ Concerns: {concerns}</div>
     {"<div class='risk-small'>🌿 NDVI: " + str(ndvi) + " — " + ndvi_note + "</div>" if ndvi_note else ""}
 </div>
-
+ 
 **Nearest reference city:** {nearest_record.get('city','Unknown')} &nbsp;
 ({nearest_record.get('distance_km',0):.2f} km away)
-
+ 
 **Why this risk level?**
 The Random Forest model learned from `final_df_water_quality.csv`. The selected area's
 parameters were compared against city-level patterns. Key concern parameters: **{concerns}**.
-
+ 
 | Parameter | Value | Status |
 |-----------|-------|--------|
 | pH | {input_data['pH']} | {"✅" if 6.5<=float(input_data['pH'])<=8.5 else "⚠️"} |
@@ -472,16 +828,16 @@ parameters were compared against city-level patterns. Key concern parameters: **
 | Total Hardness | {input_data['TH']} mg/L | {"✅" if float(input_data['TH'])<=300 else "⚠️"} |
 | Dissolved O₂ | {input_data['DO']} mg/L | {"✅" if float(input_data['DO'])>=6 else "⚠️"} |
 | BOD | {input_data['BOD']} mg/L | {"✅" if float(input_data['BOD'])<=3 else "⚠️"} |
-
+ 
 **Altitude:** {earth_data.get('altitude_m')} m &nbsp; **Temp:** {earth_data.get('temperature_2m_C')} °C &nbsp;
 **Precip:** {earth_data.get('total_precipitation_sum')} &nbsp; **NDVI:** {ndvi}
 """
-
-
+ 
+ 
 # ============================================================
 # SMART CHAT AGENT
 # ============================================================
-
+ 
 def _city_card(row) -> str:
     """Format a city's water quality summary."""
     risk = row.get("Risk_Level", "NA")
@@ -493,8 +849,8 @@ def _city_card(row) -> str:
         f"- DO: {row.get('DO','NA')} mg/L | BOD: {row.get('BOD','NA')} mg/L\n"
         f"- Ca: {row.get('Ca','NA')} mg/L | Mg: {row.get('Mg','NA')} mg/L"
     )
-
-
+ 
+ 
 def answer_chatbot(question: str) -> tuple[str, dict | None]:
     """
     Returns (answer_text, map_update_dict | None).
@@ -502,7 +858,7 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
     """
     q   = question.lower().strip()
     ss  = st.session_state
-
+ 
     # ── 1. City navigation intent ──────────────────────────────────────────
     nav_patterns = [
         r"(go to|navigate to|show|move to|change.*?to|point.*?to|set.*?to|focus on|zoom to|take me to|look at)\s+(.+)",
@@ -510,7 +866,7 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
         r"can (?:you |the )?(?:map )?(?:be |show |change to |point to )?(.+)\??$",
     ]
     city_name, city_row = find_city_in_text(q)
-
+ 
     nav_intent = any(
         kw in q for kw in [
             "go to","navigate","show","move","change","point","focus","zoom",
@@ -518,12 +874,12 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
             "map to","map point","change map",
         ]
     )
-
+ 
     if city_name and city_row is not None:
         lat = float(city_row["latitude"])
         lon = float(city_row["longitude"])
         map_update = {"latitude": lat, "longitude": lon, "city": city_name}
-
+ 
         card = _city_card(city_row)
         reply = (
             f"📍 Moving map to **{city_name}** (lat: {lat:.4f}, lon: {lon:.4f}).\n\n"
@@ -531,7 +887,7 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
             f"The map centre has been updated. Click **Search Water Quality** to run the ML prediction for this location."
         )
         return reply, map_update
-
+ 
     # ── 2. List best / safest cities ──────────────────────────────────────
     if any(kw in q for kw in ["best","safest","cleanest","good place","good water","safe to drink","lowest risk"]):
         good = final_df[final_df["Risk_Level"].isin(["Very Low","Low"])].copy()
@@ -540,7 +896,7 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
         good = good.drop_duplicates("city").head(5)
         lines = [f"{i+1}. {_city_card(r)}" for i, (_,r) in enumerate(good.iterrows())]
         return "Here are the cities with the best water quality in the dataset:\n\n" + "\n\n".join(lines), None
-
+ 
     # ── 3. List worst / most polluted cities ──────────────────────────────
     if any(kw in q for kw in ["worst","most polluted","highest risk","dangerous","bad water"]):
         bad = final_df[final_df["Risk_Level"].isin(["Very High","High"])].copy()
@@ -549,7 +905,7 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
         bad = bad.drop_duplicates("city").head(5)
         lines = [f"{i+1}. {_city_card(r)}" for i, (_,r) in enumerate(bad.iterrows())]
         return "Cities with the highest water quality risk in the dataset:\n\n" + "\n\n".join(lines), None
-
+ 
     # ── 4. List all cities ─────────────────────────────────────────────────
     if any(kw in q for kw in ["list cities","all cities","which cities","available cities","show cities"]):
         cities_by_risk = final_df.drop_duplicates("city").sort_values("Risk_Level")
@@ -558,7 +914,7 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
             emoji = RISK_STYLE.get(str(r.get("Risk_Level","")), {}).get("emoji","⬜")
             lines.append(f"{emoji} **{r['city']}** — {r.get('Risk_Level','NA')} risk")
         return "**Cities in the dataset:**\n\n" + "\n".join(lines), None
-
+ 
     # ── 5. Compare two cities ──────────────────────────────────────────────
     if any(kw in q for kw in ["compare","vs","versus","difference between","better than"]):
         found_cities = []
@@ -578,7 +934,7 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
                 f"| BOD (mg/L) | {r1.get('BOD','NA')} | {r2.get('BOD','NA')} |\n"
                 f"| Risk Level | {r1.get('Risk_Level','NA')} | {r2.get('Risk_Level','NA')} |"
             ), None
-
+ 
     # ── 6. Prediction-dependent questions ─────────────────────────────────
     if not ss.get("prediction_done"):
         # Still try to answer general questions without needing prediction
@@ -593,11 +949,11 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
             "**Search Water Quality** — then I can answer questions about the selected area. "
             "You can also ask me to show a specific city, e.g. *'Go to Chennai'*."
         ), None
-
+ 
     input_data  = ss.input_data
     earth_data  = ss.earth_data
     nearest     = ss.nearest_record
-
+ 
     # ── 7. Water quality / risk questions ─────────────────────────────────
     if any(kw in q for kw in ["water quality","what is the quality","is the water","quality here","quality of water"]):
         risk  = ss.ml_risk_level
@@ -611,44 +967,44 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
             f"({nearest.get('distance_km',0):.2f} km away, "
             f"{nearest.get('Risk_Level','NA')} risk)"
         ), None
-
+ 
     if any(kw in q for kw in ["risk","prediction","result","level","danger"]):
         return (
             f"**ML prediction: {RISK_STYLE.get(ss.ml_risk_level,{}).get('emoji','')} {ss.ml_risk_level} risk**\n\n"
             f"Rule-based score: {ss.rule_score} | Concerns: {ss.concerns}"
         ), None
-
+ 
     # ── 8. Individual parameter questions ─────────────────────────────────
     if "ph" in q:
         v = input_data['pH']; s, m = parameter_status("pH", v)
         return f"**pH = {v}** — {m}. {'✅ Good' if s=='Good' else '⚠️ ' + s}. Recommended range: 6.5–8.5.", None
-
+ 
     if "tds" in q:
         v = input_data['TDS']; s, m = parameter_status("TDS", v)
         return f"**TDS = {v} mg/L** — {m}. {'✅ Good' if s=='Good' else '⚠️ ' + s}. Below 500 mg/L is ideal.", None
-
+ 
     if any(kw in q for kw in ["hardness","total hardness"," th "]):
         v = input_data['TH']; s, m = parameter_status("TH", v)
         return f"**Total Hardness = {v} mg/L** — {m}. {'✅ Good' if s=='Good' else '⚠️ ' + s}. Below 300 mg/L is acceptable.", None
-
+ 
     if any(kw in q for kw in ["bod","biological oxygen","biochemical"]):
         v = input_data['BOD']; s, m = parameter_status("BOD", v)
         return f"**BOD = {v} mg/L** — {m}. {'✅ Good' if s=='Good' else '⚠️ ' + s}. Below 3 mg/L indicates clean water.", None
-
+ 
     if any(kw in q for kw in [" do ", "dissolved oxygen","oxygen level"]):
         v = input_data['DO']; s, m = parameter_status("DO", v)
         return f"**Dissolved Oxygen = {v} mg/L** — {m}. {'✅ Good' if s=='Good' else '⚠️ ' + s}. Above 6 mg/L is healthy.", None
-
+ 
     if any(kw in q for kw in ["calcium"," ca "]):
         return f"**Calcium (Ca) = {input_data['Ca']} mg/L** — mineral component contributing to water hardness.", None
-
+ 
     if any(kw in q for kw in ["magnesium"," mg "]):
         return f"**Magnesium (Mg) = {input_data['Mg']} mg/L** — mineral component contributing to water hardness.", None
-
+ 
     # ── 9. Environmental / satellite data ─────────────────────────────────
     if any(kw in q for kw in ["altitude","elevation","dem","height"]):
         return f"**Elevation = {earth_data.get('altitude_m')} m** (Copernicus DEM 30 via Planetary Computer).", None
-
+ 
     if any(kw in q for kw in ["temperature","temp","climate","weather"]):
         return (
             f"**Temperature = {earth_data.get('temperature_2m_C')} °C** (ERA5-PDS, Jan 2023)\n"
@@ -656,7 +1012,7 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
             f"Precipitation = {earth_data.get('total_precipitation_sum')} | "
             f"Pressure = {earth_data.get('surface_pressure')} Pa"
         ), None
-
+ 
     if any(kw in q for kw in ["ndvi","vegetation","greenness","plant"]):
         ndvi = earth_data.get("ndvi_mean","NA")
         try:
@@ -665,7 +1021,7 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
             return f"**NDVI = {ndvi}** — {note} (Sentinel-2 L2A). Higher NDVI → more agricultural runoff risk.", None
         except Exception:
             return f"NDVI data not available for this location (value: {ndvi}).", None
-
+ 
     # ── 10. Nearest city ────────────────────────────────────────────────────
     if any(kw in q for kw in ["nearest","closest","near","reference city","nearby"]):
         return (
@@ -673,7 +1029,7 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
             f"**{nearest.get('distance_km',0):.2f} km** from the selected circle centre.\n\n"
             f"{_city_card(nearest)}"
         ), None
-
+ 
     # ── 11. Circle / area info ──────────────────────────────────────────────
     if any(kw in q for kw in ["area","radius","circle","location","coordinates","lat","lon"]):
         return (
@@ -682,7 +1038,7 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
             f"- Radius: {input_data['radius_m']} m\n"
             f"- Area: {input_data['area_km2']:.3f} km²"
         ), None
-
+ 
     # ── 12. Planetary Computer / STAC ──────────────────────────────────────
     if any(kw in q for kw in ["planetary","stac","copernicus","era5","sentinel","satellite"]):
         return (
@@ -693,7 +1049,7 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
             "| `sentinel-2-l2a` | NDVI / vegetation |\n\n"
             "No API key needed — assets are signed automatically."
         ), None
-
+ 
     # ── 13. Summary / help ──────────────────────────────────────────────────
     if any(kw in q for kw in ["help","what can","summary","overview","tell me everything"]):
         return (
@@ -707,7 +1063,7 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
             "- 🔬 *'Compare Mumbai and Delhi'* → side-by-side table\n"
             "- 🛰️ *'What is the NDVI / altitude / temperature?'* → satellite data"
         ), None
-
+ 
     # ── 14. Fallback ────────────────────────────────────────────────────────
     return (
         f"The selected area shows **{ss.ml_risk_level} risk** "
@@ -715,12 +1071,12 @@ def answer_chatbot(question: str) -> tuple[str, dict | None]:
         f"Concerns: {ss.concerns}.\n\n"
         "Try asking: *'What is the water quality?'*, *'Go to Mumbai'*, *'Best cities?'*, or *'Compare Delhi and Chennai'*."
     ), None
-
-
+ 
+ 
 # ============================================================
 # SESSION STATE
 # ============================================================
-
+ 
 defaults = {
     "latitude":             float(final_df["latitude"].iloc[0]),
     "longitude":            float(final_df["longitude"].iloc[0]),
@@ -731,26 +1087,26 @@ defaults = {
     "last_input_signature": None,
     "map_moved_by_chat":    False,
 }
-
+ 
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
-
-
+ 
+ 
 # ============================================================
 # THREE-PANEL GUI
 # ============================================================
-
-left_col, map_col, chat_col = st.columns([1.05, 2.15, 1.15])
-
-
+ 
+left_col, map_col, chat_col = st.columns([1, 2.2, 1.1], gap="small")
+ 
+ 
 # ============================================================
 # LEFT PANEL
 # ============================================================
-
+ 
 with left_col:
-    st.markdown('<div class="panel"><div class="panel-title">1. Water Inputs</div>', unsafe_allow_html=True)
-
+    st.markdown('<div class="panel"><div class="panel-title">⚗️ Water Inputs</div>', unsafe_allow_html=True)
+ 
     with st.expander("Circle area", expanded=True):
         latitude  = st.number_input("Center latitude",  value=float(st.session_state.latitude),  format="%.6f")
         longitude = st.number_input("Center longitude", value=float(st.session_state.longitude), format="%.6f")
@@ -759,7 +1115,7 @@ with left_col:
         st.session_state.longitude = longitude
         st.session_state.radius_m  = radius_m
         st.caption(f"Area: {circle_area_km2(radius_m):.3f} km²")
-
+ 
     pH  = st.slider("pH",                       0.0, 14.0,  7.2, 0.1)
     TDS = st.number_input("TDS mg/L",           value=450.0, step=10.0)
     TH  = st.number_input("Total Hardness mg/L",value=180.0, step=10.0)
@@ -767,23 +1123,23 @@ with left_col:
     Mg  = st.number_input("Magnesium mg/L",     value=25.0,  step=1.0)
     DO  = st.slider("Dissolved Oxygen mg/L",    0.0, 15.0,  6.5, 0.1)
     BOD = st.slider("BOD mg/L",                 0.0, 20.0,  3.2, 0.1)
-
+ 
     input_data = {
         "latitude":latitude,"longitude":longitude,"radius_m":radius_m,
         "area_km2":circle_area_km2(radius_m),
         "pH":pH,"TDS":TDS,"TH":TH,"Ca":Ca,"Mg":Mg,"DO":DO,"BOD":BOD,
     }
-
+ 
     current_sig = tuple(input_data.values())
     if st.session_state.last_input_signature is None:
         st.session_state.last_input_signature = current_sig
     if current_sig != st.session_state.last_input_signature:
         st.session_state.prediction_done      = False
         st.session_state.last_input_signature = current_sig
-
+ 
     search_clicked = st.button("🔍 Search Water Quality", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
-
+ 
     # Legend
     st.markdown('<div class="panel"><div class="panel-title">Legend</div>', unsafe_allow_html=True)
     for level, info in RISK_STYLE.items():
@@ -794,32 +1150,32 @@ with left_col:
             unsafe_allow_html=True,
         )
     st.markdown("</div>", unsafe_allow_html=True)
-
-
+ 
+ 
 # ============================================================
 # MAP PANEL
 # ============================================================
-
+ 
 with map_col:
-    st.markdown('<div class="panel"><div class="panel-title">2. Circle Map Area</div>', unsafe_allow_html=True)
+    st.markdown('<div class="panel"><div class="panel-title">🗺️ Interactive Map</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="hint-box">💡 Draw a circle on the map, or ask the chat agent '
-        '<b>"Go to Mumbai"</b> to navigate to a city automatically.</div>',
+        '<div class="hint-box">✏️ <b>Draw a circle</b> on the map — or type '
+        '<b>"Go to Mumbai"</b> in the chat to navigate instantly.</div>',
         unsafe_allow_html=True,
     )
-
+ 
     m = folium.Map(
         location=[st.session_state.latitude, st.session_state.longitude],
         zoom_start=6, tiles="OpenStreetMap",
     )
-
+ 
     Draw(
         export=True,
         draw_options={"polyline":False,"rectangle":False,"polygon":False,
                       "circle":True,"marker":False,"circlemarker":False},
         edit_options={"edit":True,"remove":True},
     ).add_to(m)
-
+ 
     # Show all dataset cities as small markers
     for _, row in final_df.drop_duplicates("city").iterrows():
         risk    = str(row.get("Risk_Level","NA"))
@@ -835,7 +1191,7 @@ with map_col:
                 max_width=200,
             ),
         ).add_to(m)
-
+ 
     # Selected circle
     folium.Circle(
         location=[st.session_state.latitude, st.session_state.longitude],
@@ -843,13 +1199,13 @@ with map_col:
         color="#2563EB", fill=True, fill_color="#93C5FD", fill_opacity=0.22,
         popup="Selected circle area",
     ).add_to(m)
-
+ 
     folium.Marker(
         [st.session_state.latitude, st.session_state.longitude],
         popup="Circle centre", tooltip="Circle centre",
         icon=folium.Icon(color="blue", icon="tint", prefix="fa"),
     ).add_to(m)
-
+ 
     if st.session_state.prediction_done:
         folium.Circle(
             location=[st.session_state.latitude, st.session_state.longitude],
@@ -859,15 +1215,15 @@ with map_col:
             fill_opacity=st.session_state.intensity,
             popup=f"{st.session_state.ml_risk_level} Risk",
         ).add_to(m)
-
+ 
     add_map_legend(m)
-
+ 
     map_data = st_folium(
-        m, height=610, width=900,
+        m, height=520, use_container_width=True,
         returned_objects=["last_active_drawing","all_drawings"],
         key="water_quality_circle_map",
     )
-
+ 
     if map_data and map_data.get("last_active_drawing"):
         st.session_state.drawn_area = map_data["last_active_drawing"]
         lat_, lon_, drawn_r = get_circle_from_geometry(st.session_state.drawn_area)
@@ -876,115 +1232,122 @@ with map_col:
             st.session_state.longitude = lon_
             st.session_state.radius_m  = drawn_r
             st.session_state.prediction_done = False
-
+ 
     st.info(
         f"📍 Centre: {st.session_state.latitude:.6f}, {st.session_state.longitude:.6f} | "
         f"Radius: {st.session_state.radius_m:.1f} m | "
         f"Area: {circle_area_km2(st.session_state.radius_m):.3f} km²"
     )
     st.markdown("</div>", unsafe_allow_html=True)
-
-
+ 
+ 
 # ============================================================
 # CHAT PANEL
 # ============================================================
-
+ 
 with chat_col:
-    st.markdown('<div class="panel"><div class="panel-title">3. 🤖 Smart Chat Agent</div>', unsafe_allow_html=True)
-
-    st.markdown("""
-    <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:8px 12px;font-size:12px;color:#166534;margin-bottom:10px;">
-    💡 Try: <b>"Go to Mumbai"</b> · <b>"Best cities?"</b> · <b>"What is the water quality?"</b> · <b>"Compare Delhi and Chennai"</b>
-    </div>
-    """, unsafe_allow_html=True)
-
+    st.markdown('<div class="panel"><div class="panel-title">🤖 Chat Agent</div>', unsafe_allow_html=True)
+ 
+    st.markdown(
+        '<div class="tip-banner">'
+        '💡 <b>"Go to Mumbai"</b> &nbsp;·&nbsp; <b>"Best cities?"</b> &nbsp;·&nbsp; '
+        '<b>"Water quality here?"</b> &nbsp;·&nbsp; <b>"Compare Delhi &amp; Chennai"</b>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+ 
     question    = st.text_area(
         "Ask about water quality or a city:",
         placeholder="e.g. 'Go to Mumbai' or 'What is the BOD?'",
-        height=90,
+        height=80,
         key="chat_input",
     )
-    ask_clicked = st.button("💬 Ask", use_container_width=True)
-
+    ask_clicked = st.button("💬 Ask Agent", use_container_width=True)
+ 
     if ask_clicked and question.strip():
         answer, map_update = answer_chatbot(question)
-
-        # If chatbot wants to move map
+ 
         if map_update:
             st.session_state.latitude  = map_update["latitude"]
             st.session_state.longitude = map_update["longitude"]
             st.session_state.prediction_done   = False
             st.session_state.map_moved_by_chat = True
-
+ 
         st.session_state.chat_history.append({
             "question": question,
             "answer":   answer,
             "map_update": map_update,
         })
         st.rerun()
-
-    # Render chat history
-    for chat in reversed(st.session_state.chat_history[-6:]):
-        mu = chat.get("map_update")
-        st.markdown(
-            f'<div class="chat-label chat-user-label">You</div>'
-            f'<div class="chat-bubble-user">{chat["question"]}</div>',
-            unsafe_allow_html=True,
-        )
-        agent_text = chat["answer"]
-        if mu:
-            agent_text = f"🗺️ Map moved to **{mu['city']}**\n\n" + agent_text
-        st.markdown(
-            f'<div class="chat-label chat-agent-label">Agent</div>'
-            f'<div class="chat-bubble-agent">{agent_text}</div>',
-            unsafe_allow_html=True,
-        )
-
-    if st.button("🗑️ Clear chat", use_container_width=True):
-        st.session_state.chat_history = []
-        st.rerun()
-
+ 
+    # Scrollable chat history
+    if st.session_state.chat_history:
+        chat_html = '<div class="chat-scroll">'
+        for chat in reversed(st.session_state.chat_history[-8:]):
+            mu = chat.get("map_update")
+            chat_html += (
+                f'<div class="chat-label chat-user-label">You</div>'
+                f'<div class="chat-bubble-user">{chat["question"]}</div>'
+            )
+            agent_text = chat["answer"].replace("\n", "<br>").replace("**", "<b>", 1)
+            # Close any opened bold tags naively
+            agent_text = agent_text.replace("**", "</b>")
+            if mu:
+                agent_text = f"🗺️ Map → <b>{mu['city']}</b><br><br>" + agent_text
+            chat_html += (
+                f'<div class="chat-label chat-agent-label">Agent</div>'
+                f'<div class="chat-bubble-agent">{agent_text}</div>'
+            )
+        chat_html += '</div>'
+        st.markdown(chat_html, unsafe_allow_html=True)
+ 
+    if st.session_state.chat_history:
+        if st.button("🗑️ Clear chat", use_container_width=True):
+            st.session_state.chat_history = []
+            st.rerun()
+ 
     st.markdown("</div>", unsafe_allow_html=True)
-
+ 
     # System panel
     st.markdown('<div class="panel"><div class="panel-title">⚙️ System</div>', unsafe_allow_html=True)
     if STAC_READY and pc_catalog is not None:
-        st.success("✅ Planetary Computer connected")
+        st.success("✅ Planetary Computer")
     elif STAC_READY:
-        st.warning("⚠️ Catalog connection failed")
+        st.warning("⚠️ Catalog failed")
     else:
-        st.warning("⚠️ STAC libraries not installed")
+        st.warning("⚠️ STAC not installed")
         st.caption("pip install pystac-client planetary-computer stackstac rasterio")
-
-    st.caption(f"Dataset: {len(final_df)} cities | ML: Random Forest | "
-               f"Remote sensing: PC STAC")
+ 
+    st.caption(
+        f"🏙️ {len(final_df)} cities &nbsp;|&nbsp; 🌲 Random Forest &nbsp;|&nbsp; 🛰️ PC STAC"
+    )
     st.markdown("</div>", unsafe_allow_html=True)
-
-
+ 
+ 
 # ============================================================
 # SEARCH ACTION
 # ============================================================
-
+ 
 if search_clicked:
     with st.spinner("🛰️ Querying Planetary Computer STAC…"):
         earth_data = extract_pc_data(latitude, longitude, radius_m)
-
+ 
     nearest_record = find_nearest_dataframe_record(latitude, longitude)
     rule_level, rule_score, concerns = calculate_rule_risk(input_data)
     ml_risk_level, probability_df   = predict_ml_risk(input_data, earth_data)
-
+ 
     if ml_risk_level not in RISK_STYLE:
         ml_risk_level = rule_level
-
+ 
     map_color = RISK_STYLE[ml_risk_level]["color"]
     intensity = RISK_STYLE[ml_risk_level]["intensity"]
-
+ 
     explanation = generate_explanation(
         input_data, earth_data, nearest_record,
         ml_risk_level, rule_level, rule_score,
         map_color, intensity, concerns, probability_df,
     )
-
+ 
     st.session_state.update({
         "prediction_done": True,
         "input_data":      input_data,
@@ -999,18 +1362,18 @@ if search_clicked:
         "explanation":     explanation,
         "probability_df":  probability_df,
     })
-
-
+ 
+ 
 # ============================================================
 # DASHBOARD + RESULT
 # ============================================================
-
+ 
 st.divider()
-dash_col, result_col = st.columns([1.1, 2.1])
-
+dash_col, result_col = st.columns([1, 2], gap="small")
+ 
 with dash_col:
     st.markdown('<div class="panel"><div class="panel-title">📊 Input Dashboard</div>', unsafe_allow_html=True)
-
+ 
     param_rows = [
         {
             "Parameter": p,
@@ -1028,42 +1391,42 @@ with dash_col:
         }).set_index("Parameter")
     )
     st.markdown("</div>", unsafe_allow_html=True)
-
+ 
 with result_col:
     st.markdown('<div class="panel"><div class="panel-title">🔎 Search Result</div>', unsafe_allow_html=True)
-
+ 
     if not st.session_state.prediction_done:
         st.info("Draw a circle, enter inputs, then click **Search Water Quality**.\n\n"
                 "Or ask the chat agent: *'Go to Mumbai'* to navigate to a city.")
     else:
         st.markdown(st.session_state.explanation, unsafe_allow_html=True)
-
+ 
         c1,c2,c3,c4,c5 = st.columns(5)
         c1.metric("ML Risk",     st.session_state.ml_risk_level)
         c2.metric("Rule Score",  st.session_state.rule_score)
         c3.metric("Color",       st.session_state.map_color)
         c4.metric("Intensity",   st.session_state.intensity)
         c5.metric("Nearest City",st.session_state.nearest_record.get("city","NA"))
-
+ 
         st.progress(min(st.session_state.rule_score / 9, 1.0))
-
+ 
         with st.expander("ML Class Probabilities"):
             st.dataframe(st.session_state.probability_df, use_container_width=True)
             st.bar_chart(st.session_state.probability_df.set_index("Risk_Level")["Probability"])
-
+ 
         with st.expander("Nearest Reference City"):
             ndf = pd.DataFrame([st.session_state.nearest_record])
             show = [c for c in ["city","distance_km","latitude","longitude",
                                  "pH","TDS","TH","Ca","Mg","DO","BOD","Risk_Level","Risk_Score"]
                     if c in ndf.columns]
             st.dataframe(ndf[show], use_container_width=True)
-
+ 
         with st.expander("🛰️ Planetary Computer STAC Data"):
             st.json(st.session_state.earth_data)
-
+ 
         with st.expander("LLM Context from Dataframe"):
             st.text(llm_context[:3000] + "\n...[truncated]" if len(llm_context) > 3000 else llm_context)
-
+ 
         result_df = pd.DataFrame([{
             "latitude":st.session_state.latitude,"longitude":st.session_state.longitude,
             "radius_m":st.session_state.radius_m,"area_km2":circle_area_km2(st.session_state.radius_m),
@@ -1085,12 +1448,16 @@ with result_col:
             "Mg":st.session_state.input_data["Mg"],"DO":st.session_state.input_data["DO"],
             "BOD":st.session_state.input_data["BOD"],
         }])
-
+ 
         st.download_button(
             "⬇️ Download Search Result CSV",
             result_df.to_csv(index=False),
             "water_quality_search_result.csv","text/csv",
             use_container_width=True,
         )
-
+ 
     st.markdown("</div>", unsafe_allow_html=True)
+ 
+
+Failed to download files
+
