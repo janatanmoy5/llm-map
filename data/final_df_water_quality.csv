@@ -1,0 +1,6 @@
+Unnamed: 0,city,temperature_2m,temperature_2m_C,dewpoint_temperature_2m,dewpoint_temperature_2m_C,total_precipitation_sum,surface_pressure,pH,TDS,TH,Ca,Mg,DO,BOD,Water_Quality_Prediction,Water_Quality_Risk_Score,Concern_Parameters,Risk_Level,Risk_Score,Map_Color,latitude,longitude,Color_Intensity
+0,Kolkata,292.98556992315474,19.835569923154765,287.3382051324332,14.188205132433213,0.0002559307370866,101513.77810504872,7.2,450,180,60,25,6.5,3.2,Good,1,high BOD,Very Low,1,green,22.5726,88.3639,0.25
+1,Delhi,285.6764222627045,12.5264222627045,281.2696882473525,8.119688247352542,0.027334663585254,99319.96762117776,7.8,720,310,95,42,4.8,5.5,Poor,5,high TDS; high total hardness; low dissolved oxygen; high BOD,Moderate,5,orange,22.5726,88.3639,0.6
+2,Mumbai,296.3652820997341,23.21528209973411,289.3657063925138,16.215706392513823,0.000817197874614,101241.09127709172,7.1,530,250,80,35,5.6,4.1,Moderate,2,high TDS; high BOD,Low,2,lightgreen,22.5726,88.3639,0.4
+3,Chennai,,,,,,,8.1,850,360,110,48,4.2,6.2,Poor,7,high TDS; high total hardness; low dissolved oxygen; high BOD; very high BOD,High,7,red,22.5726,88.3639,0.75
+4,Bengaluru,292.81281549187116,19.662815491871186,284.3100397048458,11.160039704845817,0.0008160057817185,91279.35337386592,7.4,390,160,55,20,7.1,2.4,Good,0,all major parameters are within low-risk range,Very Low,0,green,22.5726,88.3639,0.25
