@@ -1,3 +1,5 @@
+# app.py
+
 import os
 import json
 import math
@@ -6,6 +8,8 @@ import streamlit as st
 import folium
 from folium.plugins import Draw
 from streamlit_folium import st_folium
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
 
 try:
     import ee
@@ -13,9 +17,14 @@ except Exception:
     ee = None
 
 
+# ============================================================
+# APP CONFIG
+# ============================================================
+
 st.set_page_config(
-    page_title="Water Quality Prediction with GEE + Chatbot",
-    layout="wide"
+    page_title="Water Quality AI Map",
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
 DATA_FILE = "data/final_df_water_quality.csv"
@@ -28,45 +37,122 @@ RISK_STYLE = {
     "Very High": {"color": "#7F0000", "emoji": "🟥", "intensity": 0.90},
 }
 
-st.markdown("""
-<style>
-.title {font-size:34px;font-weight:800;margin-bottom:4px;}
-.subtitle {font-size:16px;color:#666;margin-bottom:18px;}
-.guide-box {
-    background:#F3F7FF;
-    border:1px solid #D7E3FF;
-    padding:15px;
-    border-radius:14px;
-    margin-bottom:12px;
-}
-.risk-card {
-    padding:24px;
-    border-radius:18px;
-    color:white;
-    margin-bottom:16px;
-    box-shadow:0px 4px 14px rgba(0,0,0,0.18);
-}
-.risk-big {font-size:34px;font-weight:800;}
-.risk-small {font-size:16px;margin-top:5px;}
-.legend-card {
-    padding:12px;
-    border-radius:12px;
-    color:white;
-    text-align:center;
-    font-weight:700;
-    margin-bottom:6px;
-}
-</style>
-""", unsafe_allow_html=True)
+
+# ============================================================
+# CSS
+# ============================================================
 
 st.markdown(
-    '<div class="title">Water Quality Prediction with Google Earth Engine + Chatbot</div>',
+    """
+    <style>
+    .block-container {
+        padding-top: 1.2rem;
+        padding-left: 1.2rem;
+        padding-right: 1.2rem;
+    }
+    .app-title {
+        font-size: 34px;
+        font-weight: 850;
+        color: #0F172A;
+        margin-bottom: 0px;
+    }
+    .app-subtitle {
+        color: #64748B;
+        font-size: 15px;
+        margin-bottom: 16px;
+    }
+    .panel {
+        background: #FFFFFF;
+        border: 1px solid #E5E7EB;
+        border-radius: 18px;
+        padding: 16px;
+        box-shadow: 0px 5px 18px rgba(15, 23, 42, 0.06);
+        margin-bottom: 14px;
+    }
+    .panel-title {
+        font-size: 18px;
+        font-weight: 800;
+        color: #0F172A;
+        margin-bottom: 10px;
+    }
+    .hint-box {
+        background: #EFF6FF;
+        border: 1px solid #BFDBFE;
+        color: #1E3A8A;
+        border-radius: 14px;
+        padding: 12px;
+        font-size: 14px;
+        margin-bottom: 12px;
+    }
+    .risk-card {
+        padding: 22px;
+        border-radius: 18px;
+        color: white;
+        box-shadow: 0px 8px 22px rgba(0,0,0,0.18);
+        margin-bottom: 14px;
+    }
+    .risk-big {
+        font-size: 31px;
+        font-weight: 850;
+        line-height: 1.1;
+    }
+    .risk-small {
+        font-size: 14px;
+        margin-top: 6px;
+    }
+    .legend-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 7px;
+        font-size: 14px;
+        color: #334155;
+    }
+    .legend-dot {
+        height: 13px;
+        width: 13px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+    }
+    .chat-user {
+        background: #E0F2FE;
+        border-radius: 14px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        color: #075985;
+        font-size: 14px;
+    }
+    .chat-agent {
+        background: #F1F5F9;
+        border-radius: 14px;
+        padding: 10px 12px;
+        margin-bottom: 14px;
+        color: #334155;
+        font-size: 14px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# ============================================================
+# HEADER
+# ============================================================
+
+st.markdown(
+    '<div class="app-title">Water Quality AI Map</div>',
     unsafe_allow_html=True,
 )
 st.markdown(
-    '<div class="subtitle">Draw a circle on the map, enter water-quality values, then get prediction, color score, Earth Engine context, and chatbot explanation.</div>',
+    '<div class="app-subtitle">Left: water inputs | Center: map circle selection | Right: chat agent | Bottom: prediction, ML, LLM context, and nearest city</div>',
     unsafe_allow_html=True,
 )
+
+
+# ============================================================
+# LOAD CSV
+# ============================================================
 
 if not os.path.exists(DATA_FILE):
     st.error("Missing file: data/final_df_water_quality.csv")
@@ -74,19 +160,78 @@ if not os.path.exists(DATA_FILE):
 
 final_df = pd.read_csv(DATA_FILE)
 
-required_cols = ["pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD"]
+if "Unnamed: 0" in final_df.columns:
+    final_df = final_df.drop(columns=["Unnamed: 0"])
+
+required_cols = [
+    "city", "pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD",
+    "Risk_Level", "latitude", "longitude"
+]
+
 for col in required_cols:
     if col not in final_df.columns:
         st.error(f"Missing required column in CSV: {col}")
         st.stop()
 
-if "city" not in final_df.columns:
-    final_df["city"] = "Unknown"
-if "latitude" not in final_df.columns:
-    final_df["latitude"] = 22.5726
-if "longitude" not in final_df.columns:
-    final_df["longitude"] = 88.3639
+numeric_cols = [
+    "temperature_2m", "temperature_2m_C",
+    "dewpoint_temperature_2m", "dewpoint_temperature_2m_C",
+    "total_precipitation_sum", "surface_pressure",
+    "pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD",
+    "Water_Quality_Risk_Score", "Risk_Score",
+    "Color_Intensity", "latitude", "longitude"
+]
 
+for col in numeric_cols:
+    if col in final_df.columns:
+        final_df[col] = pd.to_numeric(final_df[col], errors="coerce")
+
+final_df = final_df.dropna(subset=["latitude", "longitude"])
+
+
+# ============================================================
+# FULL DATAFRAME TO LLM CONTEXT
+# ============================================================
+
+def dataframe_to_llm_context(df):
+    context = []
+
+    for _, row in df.iterrows():
+        city_text = f"""
+City: {row.get('city', 'Unknown')}
+
+Earth Engine Climate Data:
+- Temperature: {row.get('temperature_2m_C', 'NA')} °C
+- Dewpoint Temperature: {row.get('dewpoint_temperature_2m_C', 'NA')} °C
+- Total Precipitation: {row.get('total_precipitation_sum', 'NA')}
+- Surface Pressure: {row.get('surface_pressure', 'NA')}
+
+Water Quality Parameters:
+- pH: {row.get('pH', 'NA')}
+- TDS: {row.get('TDS', 'NA')} mg/L
+- Total Hardness: {row.get('TH', 'NA')} mg/L
+- Calcium: {row.get('Ca', 'NA')} mg/L
+- Magnesium: {row.get('Mg', 'NA')} mg/L
+- Dissolved Oxygen: {row.get('DO', 'NA')} mg/L
+- BOD: {row.get('BOD', 'NA')} mg/L
+
+Prediction:
+- Water Quality: {row.get('Water_Quality_Prediction', 'NA')}
+- Risk Level: {row.get('Risk_Level', 'NA')}
+- Risk Score: {row.get('Risk_Score', row.get('Water_Quality_Risk_Score', 'NA'))}
+- Concern Parameters: {row.get('Concern_Parameters', 'NA')}
+"""
+        context.append(city_text)
+
+    return "\n".join(context)
+
+
+llm_context = dataframe_to_llm_context(final_df)
+
+
+# ============================================================
+# EARTH ENGINE
+# ============================================================
 
 @st.cache_resource
 def init_earth_engine():
@@ -98,54 +243,28 @@ def init_earth_engine():
             service_account = st.secrets["gee_service_account"]
             private_key_raw = st.secrets["gee_private_key"]
 
-            key_dict = json.loads(private_key_raw) if isinstance(private_key_raw, str) else dict(private_key_raw)
+            key_dict = (
+                json.loads(private_key_raw)
+                if isinstance(private_key_raw, str)
+                else dict(private_key_raw)
+            )
 
             credentials = ee.ServiceAccountCredentials(
                 service_account,
                 key_data=json.dumps(key_dict),
             )
+
             ee.Initialize(credentials)
-            return True, "Google Earth Engine connected using Streamlit secrets."
+            return True, "Google Earth Engine connected with Streamlit secrets."
 
         ee.Initialize()
-        return True, "Google Earth Engine connected using local credentials."
+        return True, "Google Earth Engine connected with local credentials."
 
     except Exception as e:
         return False, str(e)
 
 
 gee_ready, gee_message = init_earth_engine()
-
-
-def circle_area_km2(radius_m):
-    return math.pi * (radius_m / 1000) ** 2
-
-
-def get_circle_from_geometry(geometry):
-    """
-    Folium circle usually returns:
-    geometry: Point
-    properties: radius
-    """
-    if not geometry:
-        return None, None, None, "No circle selected"
-
-    geom_type = geometry.get("geometry", {}).get("type")
-    coords = geometry.get("geometry", {}).get("coordinates", [])
-    properties = geometry.get("properties", {})
-
-    radius_m = properties.get("radius", None)
-
-    if geom_type == "Point" and len(coords) == 2:
-        lon = coords[0]
-        lat = coords[1]
-
-        if radius_m is None:
-            radius_m = 1000
-
-        return lat, lon, float(radius_m), "Circle area"
-
-    return None, None, None, "Please draw a circle"
 
 
 def extract_earth_engine_data(latitude, longitude, radius_m):
@@ -200,9 +319,12 @@ def extract_earth_engine_data(latitude, longitude, radius_m):
         dew_k = climate_values.get("dewpoint_temperature_2m")
 
         return {
-            "altitude_m": round(elevation.get("elevation"), 2) if elevation.get("elevation") is not None else "NA",
-            "temperature_2m_C": round(temp_k - 273.15, 2) if temp_k is not None else "NA",
-            "dewpoint_temperature_2m_C": round(dew_k - 273.15, 2) if dew_k is not None else "NA",
+            "altitude_m": round(elevation.get("elevation"), 2)
+            if elevation.get("elevation") is not None else "NA",
+            "temperature_2m_C": round(temp_k - 273.15, 2)
+            if temp_k is not None else "NA",
+            "dewpoint_temperature_2m_C": round(dew_k - 273.15, 2)
+            if dew_k is not None else "NA",
             "total_precipitation_sum": climate_values.get("total_precipitation_sum", "NA"),
             "surface_pressure": climate_values.get("surface_pressure", "NA"),
             "source": "ERA5-Land Monthly + SRTM elevation",
@@ -220,7 +342,38 @@ def extract_earth_engine_data(latitude, longitude, radius_m):
         }
 
 
-def calculate_risk(row):
+# ============================================================
+# UTILITIES
+# ============================================================
+
+def circle_area_km2(radius_m):
+    return math.pi * (radius_m / 1000) ** 2
+
+
+def get_circle_from_geometry(drawing):
+    if not drawing:
+        return None, None, None
+
+    geom = drawing.get("geometry", {})
+    props = drawing.get("properties", {})
+
+    geom_type = geom.get("type")
+    coords = geom.get("coordinates", [])
+    radius_m = props.get("radius")
+
+    if geom_type == "Point" and len(coords) == 2:
+        lon = coords[0]
+        lat = coords[1]
+
+        if radius_m is None:
+            radius_m = 1000.0
+
+        return float(lat), float(lon), float(radius_m)
+
+    return None, None, None
+
+
+def calculate_rule_risk(row):
     score = 0
     reasons = []
 
@@ -272,13 +425,7 @@ def calculate_risk(row):
     if not reasons:
         reasons.append("all major parameters are within low-risk range")
 
-    return (
-        level,
-        score,
-        RISK_STYLE[level]["color"],
-        RISK_STYLE[level]["intensity"],
-        "; ".join(reasons),
-    )
+    return level, score, "; ".join(reasons)
 
 
 def parameter_status(param, value):
@@ -317,125 +464,36 @@ def parameter_status(param, value):
     return "Info", "Recorded"
 
 
+def haversine_km(lat1, lon1, lat2, lon2):
+    r = 6371.0
+
+    lat1 = math.radians(float(lat1))
+    lon1 = math.radians(float(lon1))
+    lat2 = math.radians(float(lat2))
+    lon2 = math.radians(float(lon2))
+
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    )
+
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    return r * c
+
+
 def find_nearest_dataframe_record(latitude, longitude):
     df = final_df.copy()
-    df["distance"] = (
-        (df["latitude"] - latitude) ** 2 + (df["longitude"] - longitude) ** 2
-    ) ** 0.5
-    return df.sort_values("distance").iloc[0]
 
-
-def generate_explanation(input_data, earth_data, nearest_record, risk_level, risk_score, color, intensity, concerns):
-    pollution_sources = []
-
-    if input_data["BOD"] > 3:
-        pollution_sources.append("organic pollution, sewage input, or decomposing biological matter")
-    if input_data["DO"] < 5:
-        pollution_sources.append("oxygen depletion, stagnant water, or microbial activity")
-    if input_data["TDS"] > 500:
-        pollution_sources.append("mineral loading, salinity, or dissolved solids")
-    if input_data["TH"] > 300:
-        pollution_sources.append("hardness from calcium/magnesium-rich water or groundwater influence")
-    if input_data["pH"] < 6.5 or input_data["pH"] > 8.5:
-        pollution_sources.append("acidic or alkaline stress")
-
-    if not pollution_sources:
-        pollution_sources.append("no strong pollution signal from the entered parameters")
-
-    pollution_html = "".join([f"<li>{x}</li>" for x in pollution_sources])
-
-    return f"""
-<div class="risk-card" style="background:{color};">
-    <div class="risk-big">{RISK_STYLE[risk_level]['emoji']} {risk_level} Risk</div>
-    <div class="risk-small">Score: {risk_score} | Color Intensity: {intensity}</div>
-    <div class="risk-small">Main concern: {concerns}</div>
-</div>
-
-### AI Interpretation
-
-The selected circle area is predicted as **{risk_level} risk**.
-
-The prediction uses:
-
-- Circle center latitude and longitude
-- Circle radius and estimated area
-- Altitude from Google Earth Engine/SRTM when available
-- ERA5-Land climate variables when Earth Engine is connected
-- User-entered water chemistry values
-- Nearest reference record from your dataframe
-
-### Selected Circle Area
-
-- **Latitude:** {input_data["latitude"]}
-- **Longitude:** {input_data["longitude"]}
-- **Radius:** {input_data["radius_m"]} meters
-- **Approximate Area:** {input_data["area_km2"]:.3f} km²
-- **Altitude:** {earth_data.get("altitude_m")} meters
-
-### Water Quality Meaning
-
-- **pH:** acidity or alkalinity
-- **TDS:** dissolved salts, minerals, or contamination input
-- **TH, Ca, Mg:** hardness and mineral composition
-- **DO:** oxygen availability
-- **BOD:** organic pollution and oxygen demand
-
-### Possible Pollution or Environmental Sources
-
-<ul>
-{pollution_html}
-</ul>
-
-### Recommended Monitoring
-
-- Repeat sampling inside the selected circle area.
-- Compare current values with the nearest dataframe reference.
-- If risk is Moderate, High, or Very High, inspect drains, sewage discharge, industrial discharge, agricultural runoff, or stagnant water bodies.
-"""
-
-
-def answer_chatbot(question):
-    if not st.session_state.get("prediction_done"):
-        return "Please first draw a circle on the map, enter water-quality values, and click **Predict and Explain**."
-
-    input_data = st.session_state.input_data
-    earth_data = st.session_state.earth_data
-
-    q = question.lower()
-
-    if "bod" in q:
-        return f"BOD is {input_data['BOD']} mg/L. Higher BOD indicates organic pollution and oxygen demand. Current status: {parameter_status('BOD', input_data['BOD'])[1]}."
-
-    if "do" in q or "oxygen" in q:
-        return f"DO is {input_data['DO']} mg/L. Low DO may indicate oxygen stress, sewage influence, stagnant water, or organic pollution. Current status: {parameter_status('DO', input_data['DO'])[1]}."
-
-    if "tds" in q:
-        return f"TDS is {input_data['TDS']} mg/L. High TDS may indicate dissolved minerals, salinity, or contamination input. Current status: {parameter_status('TDS', input_data['TDS'])[1]}."
-
-    if "ph" in q:
-        return f"pH is {input_data['pH']}. Recommended range is usually 6.5–8.5. Current status: {parameter_status('pH', input_data['pH'])[1]}."
-
-    if "hardness" in q or "th" in q:
-        return f"Total hardness is {input_data['TH']} mg/L. High hardness may be related to calcium and magnesium minerals. Current status: {parameter_status('TH', input_data['TH'])[1]}."
-
-    if "altitude" in q or "elevation" in q:
-        return f"The selected circle area's altitude is {earth_data.get('altitude_m')} meters."
-
-    if "area" in q or "circle" in q or "radius" in q:
-        return f"The selected circle has radius {input_data['radius_m']} meters and approximate area {input_data['area_km2']:.3f} km²."
-
-    if "temperature" in q or "climate" in q:
-        return f"Earth Engine temperature is {earth_data.get('temperature_2m_C')} °C and precipitation is {earth_data.get('total_precipitation_sum')}."
-
-    if "risk" in q or "result" in q:
-        return f"The selected circle area is classified as {st.session_state.risk_level} risk with score {st.session_state.risk_score}. Main concerns: {st.session_state.concerns}."
-
-    return (
-        f"For this selected circle area, the risk level is {st.session_state.risk_level} "
-        f"with score {st.session_state.risk_score}. Main concerns are {st.session_state.concerns}. "
-        f"The circle radius is {input_data['radius_m']} meters, area is {input_data['area_km2']:.3f} km², "
-        f"altitude is {earth_data.get('altitude_m')} m, and temperature is {earth_data.get('temperature_2m_C')} °C."
+    df["distance_km"] = df.apply(
+        lambda r: haversine_km(latitude, longitude, r["latitude"], r["longitude"]),
+        axis=1,
     )
+
+    return df.sort_values("distance_km").iloc[0]
 
 
 def add_map_legend(folium_map):
@@ -464,328 +522,211 @@ def add_map_legend(folium_map):
     folium_map.get_root().html.add_child(folium.Element(legend_html))
 
 
-defaults = {
-    "latitude": float(final_df["latitude"].iloc[0]),
-    "longitude": float(final_df["longitude"].iloc[0]),
-    "radius_m": 1000.0,
-    "selected_type": "Circle",
-    "drawn_area": None,
-    "prediction_done": False,
-    "chat_history": [],
-}
+# ============================================================
+# ML MODEL
+# ============================================================
 
-for key, value in defaults.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
+ML_FEATURES = [
+    "latitude",
+    "longitude",
+    "pH",
+    "TDS",
+    "TH",
+    "Ca",
+    "Mg",
+    "DO",
+    "BOD",
+    "temperature_2m_C",
+    "dewpoint_temperature_2m_C",
+    "total_precipitation_sum",
+    "surface_pressure",
+]
 
 
-with st.sidebar:
-    st.header("How to Use")
-    st.markdown(
-        """
-        1. Use the circle tool on the map.  
-        2. Draw the area you want to analyze.  
-        3. Enter pH, TDS, TH, Ca, Mg, DO, and BOD.  
-        4. Click **Predict and Explain**.  
-        5. Ask follow-up questions in the chatbot.
-        """
+@st.cache_resource
+def train_ml_model(df):
+    train_df = df.copy()
+
+    for col in ML_FEATURES:
+        if col not in train_df.columns:
+            train_df[col] = 0
+
+        train_df[col] = pd.to_numeric(train_df[col], errors="coerce")
+
+    train_df[ML_FEATURES] = train_df[ML_FEATURES].fillna(0)
+
+    label_encoder = LabelEncoder()
+    y = label_encoder.fit_transform(train_df["Risk_Level"].astype(str))
+
+    model = RandomForestClassifier(
+        n_estimators=200,
+        random_state=42,
+        class_weight="balanced",
     )
 
-    st.divider()
+    model.fit(train_df[ML_FEATURES], y)
 
-    st.header("System Status")
-
-    if gee_ready:
-        st.success("Google Earth Engine connected")
-    else:
-        st.warning("Earth Engine not connected")
-        st.caption("Altitude and climate values will show NA.")
-
-    st.divider()
-
-    st.header("Legend")
-    for level, info in RISK_STYLE.items():
-        st.markdown(
-            f"""
-            <div class="legend-card" style="background:{info['color']};">
-            {info['emoji']} {level}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    return model, label_encoder
 
 
-st.markdown(
-    """
-    <div class="guide-box">
-    <b>Workflow:</b> Draw a circle on the map. The app uses the circle center, radius, altitude,
-    Earth Engine climate data, water-quality values, and your dataframe reference to generate the prediction.
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-col_map, col_input = st.columns([2, 1])
+ml_model, label_encoder = train_ml_model(final_df)
 
 
-with col_map:
-    st.subheader("1. Draw Circle Area on Map")
-
-    m = folium.Map(
-        location=[st.session_state.latitude, st.session_state.longitude],
-        zoom_start=8,
-        tiles="OpenStreetMap",
-    )
-
-    Draw(
-        export=True,
-        draw_options={
-            "polyline": False,
-            "rectangle": False,
-            "polygon": False,
-            "circle": True,
-            "marker": False,
-            "circlemarker": False,
-        },
-        edit_options={"edit": True, "remove": True},
-    ).add_to(m)
-
-    folium.Circle(
-        location=[st.session_state.latitude, st.session_state.longitude],
-        radius=st.session_state.radius_m,
-        color="#1565C0",
-        fill=True,
-        fill_color="#90CAF9",
-        fill_opacity=0.25,
-        popup="Selected circle area",
-    ).add_to(m)
-
-    folium.Marker(
-        [st.session_state.latitude, st.session_state.longitude],
-        popup="Circle center used for prediction",
-        tooltip="Circle center",
-    ).add_to(m)
-
-    if st.session_state.prediction_done:
-        folium.Circle(
-            location=[st.session_state.latitude, st.session_state.longitude],
-            radius=st.session_state.radius_m,
-            color=st.session_state.map_color,
-            fill=True,
-            fill_color=st.session_state.map_color,
-            fill_opacity=st.session_state.intensity,
-            popup=f"{st.session_state.risk_level} Risk | Score {st.session_state.risk_score}",
-        ).add_to(m)
-
-    add_map_legend(m)
-
-    map_data = st_folium(
-        m,
-        height=650,
-        width=950,
-        returned_objects=["last_active_drawing", "all_drawings"],
-        key="water_quality_circle_map",
-    )
-
-    if map_data and map_data.get("last_active_drawing"):
-        st.session_state.drawn_area = map_data["last_active_drawing"]
-
-        lat, lon, radius_m, selected_type = get_circle_from_geometry(
-            st.session_state.drawn_area
-        )
-
-        if lat is not None and lon is not None:
-            st.session_state.latitude = lat
-            st.session_state.longitude = lon
-            st.session_state.radius_m = radius_m
-            st.session_state.selected_type = selected_type
-
-    st.info(
-        f"Selected circle for prediction: "
-        f"Latitude {st.session_state.latitude:.6f}, "
-        f"Longitude {st.session_state.longitude:.6f}, "
-        f"Radius {st.session_state.radius_m:.1f} m, "
-        f"Area {circle_area_km2(st.session_state.radius_m):.3f} km²"
-    )
-
-
-with col_input:
-    st.subheader("2. Input Water Parameters")
-
-    with st.expander("Circle area used for prediction", expanded=True):
-        latitude = st.number_input(
-            "Circle center latitude",
-            value=float(st.session_state.latitude),
-            format="%.6f",
-        )
-        longitude = st.number_input(
-            "Circle center longitude",
-            value=float(st.session_state.longitude),
-            format="%.6f",
-        )
-        radius_m = st.number_input(
-            "Circle radius meters",
-            value=float(st.session_state.radius_m),
-            min_value=50.0,
-            step=100.0,
-        )
-
-        st.session_state.latitude = latitude
-        st.session_state.longitude = longitude
-        st.session_state.radius_m = radius_m
-
-        st.write("Approximate area km²:", round(circle_area_km2(radius_m), 3))
-
-    pH = st.slider("pH", 0.0, 14.0, 7.2, 0.1)
-    TDS = st.number_input("TDS mg/L", value=450.0, step=10.0)
-    TH = st.number_input("Total Hardness mg/L", value=180.0, step=10.0)
-    Ca = st.number_input("Calcium mg/L", value=60.0, step=1.0)
-    Mg = st.number_input("Magnesium mg/L", value=25.0, step=1.0)
-    DO = st.slider("Dissolved Oxygen mg/L", 0.0, 15.0, 6.5, 0.1)
-    BOD = st.slider("BOD mg/L", 0.0, 20.0, 3.2, 0.1)
-
-    input_data = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "radius_m": radius_m,
-        "area_km2": circle_area_km2(radius_m),
-        "pH": pH,
-        "TDS": TDS,
-        "TH": TH,
-        "Ca": Ca,
-        "Mg": Mg,
-        "DO": DO,
-        "BOD": BOD,
+def predict_ml_risk(input_data, earth_data):
+    row = {
+        "latitude": input_data["latitude"],
+        "longitude": input_data["longitude"],
+        "pH": input_data["pH"],
+        "TDS": input_data["TDS"],
+        "TH": input_data["TH"],
+        "Ca": input_data["Ca"],
+        "Mg": input_data["Mg"],
+        "DO": input_data["DO"],
+        "BOD": input_data["BOD"],
+        "temperature_2m_C": earth_data.get("temperature_2m_C"),
+        "dewpoint_temperature_2m_C": earth_data.get("dewpoint_temperature_2m_C"),
+        "total_precipitation_sum": earth_data.get("total_precipitation_sum"),
+        "surface_pressure": earth_data.get("surface_pressure"),
     }
 
-    if st.button("Predict and Explain", use_container_width=True):
-        earth_data = extract_earth_engine_data(latitude, longitude, radius_m)
-        nearest_record = find_nearest_dataframe_record(latitude, longitude)
+    pred_df = pd.DataFrame([row])
 
-        risk_level, risk_score, map_color, intensity, concerns = calculate_risk(
-            input_data
-        )
+    for col in ML_FEATURES:
+        pred_df[col] = pd.to_numeric(pred_df[col], errors="coerce")
 
-        explanation = generate_explanation(
-            input_data,
-            earth_data,
-            nearest_record,
-            risk_level,
-            risk_score,
-            map_color,
-            intensity,
-            concerns,
-        )
+    pred_df[ML_FEATURES] = pred_df[ML_FEATURES].fillna(0)
 
-        st.session_state.prediction_done = True
-        st.session_state.input_data = input_data
-        st.session_state.earth_data = earth_data
-        st.session_state.nearest_record = nearest_record
-        st.session_state.risk_level = risk_level
-        st.session_state.risk_score = risk_score
-        st.session_state.map_color = map_color
-        st.session_state.intensity = intensity
-        st.session_state.concerns = concerns
-        st.session_state.explanation = explanation
+    pred_code = ml_model.predict(pred_df[ML_FEATURES])[0]
+    pred_level = label_encoder.inverse_transform([pred_code])[0]
 
+    probabilities = ml_model.predict_proba(pred_df[ML_FEATURES])[0]
 
-st.divider()
-st.subheader("3. Current Input Dashboard")
-
-param_rows = []
-for param in ["pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD"]:
-    status, meaning = parameter_status(param, input_data[param])
-    param_rows.append(
+    prob_df = pd.DataFrame(
         {
-            "Parameter": param,
-            "Value": input_data[param],
-            "Status": status,
-            "Meaning": meaning,
+            "Risk_Level": label_encoder.classes_,
+            "Probability": probabilities,
         }
+    ).sort_values("Probability", ascending=False)
+
+    return pred_level, prob_df
+
+
+# ============================================================
+# LLM-STYLE EXPLANATION
+# ============================================================
+
+def build_llm_prompt(
+    input_data,
+    earth_data,
+    nearest_record,
+    ml_risk_level,
+    rule_risk_level,
+    rule_score,
+    color,
+    intensity,
+    concerns,
+):
+    selected_context = f"""
+Selected User Map Input:
+- Latitude: {input_data['latitude']}
+- Longitude: {input_data['longitude']}
+- Circle Radius: {input_data['radius_m']} meters
+- Circle Area: {input_data['area_km2']:.3f} km²
+
+Google Earth Engine / Map-Derived Data:
+- Altitude: {earth_data.get('altitude_m')} meters
+- Temperature: {earth_data.get('temperature_2m_C')} °C
+- Dewpoint Temperature: {earth_data.get('dewpoint_temperature_2m_C')} °C
+- Total Precipitation: {earth_data.get('total_precipitation_sum')}
+- Surface Pressure: {earth_data.get('surface_pressure')}
+- Source: {earth_data.get('source')}
+
+User Water Quality Input:
+- pH: {input_data['pH']}
+- TDS: {input_data['TDS']} mg/L
+- Total Hardness: {input_data['TH']} mg/L
+- Calcium: {input_data['Ca']} mg/L
+- Magnesium: {input_data['Mg']} mg/L
+- Dissolved Oxygen: {input_data['DO']} mg/L
+- BOD: {input_data['BOD']} mg/L
+
+Nearest Reference City:
+- City: {nearest_record.get('city', 'Unknown')}
+- Distance: {nearest_record.get('distance_km', 0):.2f} km
+- Reference pH: {nearest_record.get('pH', 'NA')}
+- Reference TDS: {nearest_record.get('TDS', 'NA')}
+- Reference TH: {nearest_record.get('TH', 'NA')}
+- Reference Ca: {nearest_record.get('Ca', 'NA')}
+- Reference Mg: {nearest_record.get('Mg', 'NA')}
+- Reference DO: {nearest_record.get('DO', 'NA')}
+- Reference BOD: {nearest_record.get('BOD', 'NA')}
+
+Model Prediction:
+- ML Risk Level: {ml_risk_level}
+- Rule-Based Risk Level: {rule_risk_level}
+- Rule-Based Risk Score: {rule_score}
+- Color: {color}
+- Color Intensity: {intensity}
+- Concern Parameters: {concerns}
+"""
+
+    return f"""
+You are a water quality and environmental monitoring expert.
+
+Use the following training/reference dataset context:
+
+{llm_context}
+
+Now analyze this selected map area:
+
+{selected_context}
+
+Prepare a clear interpretation with:
+1. Overall water quality assessment
+2. Why the model predicted this risk level
+3. Which parameters are most concerning
+4. Comparison with nearest reference city
+5. How altitude/climate may influence water quality
+6. Possible pollution sources
+7. Monitoring and management recommendations
+"""
+
+
+def generate_explanation(
+    input_data,
+    earth_data,
+    nearest_record,
+    ml_risk_level,
+    rule_risk_level,
+    rule_score,
+    color,
+    intensity,
+    concerns,
+    probability_df,
+):
+    llm_prompt = build_llm_prompt(
+        input_data,
+        earth_data,
+        nearest_record,
+        ml_risk_level,
+        rule_risk_level,
+        rule_score,
+        color,
+        intensity,
+        concerns,
     )
 
-st.dataframe(pd.DataFrame(param_rows), use_container_width=True)
+    return f"""
+<div class="risk-card" style="background:{color};">
+    <div class="risk-big">{RISK_STYLE[ml_risk_level]['emoji']} {ml_risk_level} Risk</div>
+    <div class="risk-small">ML prediction using map input + water-quality dataframe</div>
+    <div class="risk-small">Rule score: {rule_score} | Color intensity: {intensity}</div>
+    <div class="risk-small">Main concerns: {concerns}</div>
+</div>
 
-chart_df = pd.DataFrame(
-    {
-        "Parameter": ["pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD"],
-        "Value": [pH, TDS, TH, Ca, Mg, DO, BOD],
-    }
-)
-st.bar_chart(chart_df.set_index("Parameter"))
+### LLM Model Input Context
 
+The app builds an LLM-style prompt from full dataframe context, selected map circle, user water-quality inputs, Earth Engine values, ML prediction, and nearest reference city.
 
-if st.session_state.prediction_done:
-    st.divider()
-    st.subheader("4. Prediction Result")
-
-    st.markdown(st.session_state.explanation, unsafe_allow_html=True)
-
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Risk Level", st.session_state.risk_level)
-    c2.metric("Risk Score", st.session_state.risk_score)
-    c3.metric("Color", st.session_state.map_color)
-    c4.metric("Intensity", st.session_state.intensity)
-    c5.metric("Altitude", st.session_state.earth_data.get("altitude_m"))
-
-    st.progress(min(st.session_state.risk_score / 9, 1.0))
-
-    with st.expander("Google Earth Engine Data", expanded=True):
-        st.json(st.session_state.earth_data)
-
-    with st.expander("Nearest Dataframe Reference", expanded=True):
-        nearest_df = pd.DataFrame([st.session_state.nearest_record])
-        show_cols = [
-            c for c in [
-                "city", "latitude", "longitude",
-                "pH", "TDS", "TH", "Ca", "Mg", "DO", "BOD"
-            ] if c in nearest_df.columns
-        ]
-        st.dataframe(nearest_df[show_cols], use_container_width=True)
-
-    result_df = pd.DataFrame([{
-        "latitude": st.session_state.latitude,
-        "longitude": st.session_state.longitude,
-        "radius_m": st.session_state.radius_m,
-        "area_km2": circle_area_km2(st.session_state.radius_m),
-        "altitude_m": st.session_state.earth_data.get("altitude_m"),
-        "Risk_Level": st.session_state.risk_level,
-        "Risk_Score": st.session_state.risk_score,
-        "Color": st.session_state.map_color,
-        "Intensity": st.session_state.intensity,
-        "Concern_Parameters": st.session_state.concerns,
-        "pH": st.session_state.input_data["pH"],
-        "TDS": st.session_state.input_data["TDS"],
-        "TH": st.session_state.input_data["TH"],
-        "Ca": st.session_state.input_data["Ca"],
-        "Mg": st.session_state.input_data["Mg"],
-        "DO": st.session_state.input_data["DO"],
-        "BOD": st.session_state.input_data["BOD"],
-    }])
-
-    st.download_button(
-        "Download Prediction CSV",
-        result_df.to_csv(index=False),
-        "water_quality_prediction_result.csv",
-        "text/csv",
-        use_container_width=True,
-    )
-
-
-st.divider()
-st.subheader("5. Chatbot: Ask About This Circle Area")
-
-question = st.text_input(
-    "Ask a question about the selected circle area or water-quality result",
-    placeholder="Example: Why is BOD concerning? What does this risk score mean? How does the selected area affect prediction?",
-)
-
-if st.button("Ask Chatbot", use_container_width=True):
-    if question.strip():
-        answer = answer_chatbot(question)
-        st.session_state.chat_history.append({"question": question, "answer": answer})
-
-for chat in reversed(st.session_state.chat_history[-5:]):
-    st.markdown(f"**User:** {chat['question']}")
-    st.markdown(f"**Assistant:** {chat['answer']}")
-    st.divider()
+```text
+{llm_prompt}
