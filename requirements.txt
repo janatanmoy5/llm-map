@@ -1,0 +1,9 @@
+streamlit
+streamlit-folium
+folium
+pandas
+earthengine-api
+transformers
+torch
+sentencepiece
+protobuf
